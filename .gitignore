@@ -1,0 +1,17 @@
+*~
+*#
+*.o
+*.so
+*.swp
+*.dylib
+*.dSYM
+*.dll
+*.rlib
+*.dummy
+*.exe
+*-test
+/doc/
+/target/
+/build/
+/.rust/
+*.lock
