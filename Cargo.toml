@@ -1,0 +1,22 @@
+[package]
+name = "dvarcraft"
+version = "0.0.0"
+keywords = []
+
+[[bin]]
+name = "dvarcraft"
+path = "src/dvarcraft.rs"
+
+[dependencies]
+piston_window = "0.69.0"
+find_folder = "0.3.0"
+piston-ai_behavior = "0.20.0"
+piston2d-sprite = "0.36.0"
+image = "0.15.0"
+piston2d-drag_controller = "0.19.0"
+gfx = "0.16.0"
+gfx_device_gl = "0.14.0"
+vecmath = "0.3.0"
+camera_controllers = "0.21.0"
+rand = "0.3.14"
+shader_version = "0.2.1"
