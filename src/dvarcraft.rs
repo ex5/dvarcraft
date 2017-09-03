@@ -1,252 +1,201 @@
-extern crate piston_window;
-extern crate piston;
-extern crate ai_behavior;
-extern crate sprite;
+#[macro_use]
+extern crate glium;
+extern crate rand;
+extern crate clock_ticks;
+extern crate cgmath;
+extern crate image;
+extern crate vecmath;
 extern crate find_folder;
-extern crate graphics;
-extern crate opengl_graphics;
-extern crate gfx_device_gl;
-extern crate current;
 
-use gfx_device_gl::Resources;
+extern crate glium_sdl2;
+extern crate sdl2;
 
-use std::rc::Rc;
+use glium::{ Surface };
+use glium::index::PrimitiveType;
+use glium::texture::Texture2dDataSource;
+use glium_sdl2::{ DisplayBuild };
+use sdl2::video::GLProfile;
 
-use piston::input::*;
-use piston_window::*;
-use sprite::*;
-use ai_behavior::{
-    Action,
-    Sequence,
-    Wait,
-};
 mod tiles;
-
-use current::{ Current, CurrentGuard };
-use std::collections::HashMap;
+mod miners;
 
 #[derive(Copy, Clone)]
-pub enum SelectionState {
-    Inactive,
-    Selecting,
-    Confirmed,
-    Cancelled,
+struct Vertex {
+    i_position: [f32; 2],
+    i_tex_id: u32,
 }
+implement_vertex!(Vertex, i_position, i_tex_id);
 
-pub struct Selection {
-    pub coords: [[f64; 2]; 4],
-    pub pressed: bool,
-    pub just_pressed: bool,
-    pub state: SelectionState,
-    pub released: bool,
-}
 
-impl Selection {
-    pub fn new() -> Selection {
-        Selection {
-            state: SelectionState::Inactive,
-            coords: [[0.0, 0.0], [0.0, 0.0], [0.0, 0.0], [0.0, 0.0]],
-            pressed: false,
-            just_pressed: false,
-            released: true,
-        }
+//let display = glium::Display::new(window, context, &events_loop).unwrap();
+fn generate_vertices(display: &glium_sdl2::SDL2Facade, tiles: &Vec<&tiles::Tile>) -> (glium::VertexBuffer<Vertex>, glium::index::IndexBuffer<u16>) {
+    let sprites_count = tiles.len();
+    let mut vb: glium::VertexBuffer<Vertex> = glium::VertexBuffer::empty_dynamic(
+        display, sprites_count * 4).unwrap();
+    let mut ib_data = Vec::with_capacity(sprites_count * 6);
+
+    // initializing with positions and texture IDs
+    for (num, sprite) in vb.map().chunks_mut(4).enumerate() {
+        let tile = &tiles[num];
+        let position = tile.position;
+        let tex_id = tile.tex_id;
+
+        sprite[0].i_position[0] = position.0 - 32.0;
+        sprite[0].i_position[1] = position.1 + 32.0;
+        sprite[0].i_tex_id = tex_id;
+        sprite[1].i_position[0] = position.0 + 32.0;
+        sprite[1].i_position[1] = position.1 + 32.0;
+        sprite[1].i_tex_id = tex_id;
+        sprite[2].i_position[0] = position.0 - 32.0;
+        sprite[2].i_position[1] = position.1 - 32.0;
+        sprite[2].i_tex_id = tex_id;
+        sprite[3].i_position[0] = position.0 + 32.0;
+        sprite[3].i_position[1] = position.1 - 32.0;
+        sprite[3].i_tex_id = tex_id;
+
+        let num = num as u16;
+        ib_data.push(num * 4);
+        ib_data.push(num * 4 + 1);
+        ib_data.push(num * 4 + 2);
+        ib_data.push(num * 4 + 1);
+        ib_data.push(num * 4 + 3);
+        ib_data.push(num * 4 + 2);
     }
 
-    pub fn is_selected(&self, pos: (f64, f64)) -> bool {
-        graphics::math::inside_triangle(
-            [self.coords[0], self.coords[1], self.coords[2]],
-            [pos.0, pos.1]) ||
-        graphics::math::inside_triangle(
-            [self.coords[0], self.coords[2], self.coords[3]],
-            [pos.0, pos.1])
-    }
-}
-pub unsafe fn current_tiles() -> Current<tiles::Tiles> { Current::new() }
-pub unsafe fn current_scene() -> Current<Scene<Texture<Resources>>> { Current::new() }
-pub unsafe fn current_selection() -> Current<Selection> { Current::new() }
-
-struct Game<'a>
- {
-    textures: HashMap<&'a str, Rc<Texture<Resources>>>,
-    window: PistonWindow,
-    assets: std::path::PathBuf,
-}
-
-pub fn get_selection_top(x0: f64, y0: f64, x1: f64, y1: f64) -> [f64; 2] {
-    let (tga, tgb) = (0.52056705, 1.93912501);
-
-    let x = (x1 - y1 * tgb + y0 * tgb + x0 * tga * tgb) / (1.0 + tga * tgb);
-    let y = y0 - x * tga + x0 * tga;
-
-    return [x, y];
-}
-
-impl <'a> Game<'a>
-{
-    fn load_texture(&mut self, path: &str) -> Rc<Texture<Resources>> {
-        Rc::new(Texture::from_path(
-                &mut self.window.factory,
-                self.assets.join(path),
-                Flip::None,
-                &TextureSettings::new()
-        ).unwrap())
-    }
-
-    pub fn new() -> Game<'a>  {
-        let textures = HashMap::new();
-
-        let (width, height) = (800, 600);
-        let window: PistonWindow =
-            WindowSettings::new("piston: sprite", (width, height))
-            .exit_on_esc(true)
-            .build()
-            .unwrap();
-
-        let assets = find_folder::Search::ParentsThenKids(3, 3)
-            .for_folder("assets").unwrap();
-
-        Game {
-            assets: assets,
-            textures: textures,
-            window: window,
-        }
-    }
-
-    pub fn init(&mut self) {
-        let mut path = self.load_texture("tiles/ts_grass0/0.png");
-        self.textures.insert("grass", path);
-        path = self.load_texture("tiles/miner_0.png");
-        self.textures.insert("miner", path);
-    }
-
-    pub fn make_layer(&mut self, size_x: usize, size_y: usize) {
-        let (step_x, step_y) = (33.0, 17.0);
-        let (x_start, y_start) = (size_x as f64 * step_x * 2.0, size_y as f64 * step_y);
-        let scale = 2.0;
-        let mut tiles = unsafe { current_tiles() };
-        for x in 0..size_x {
-            for y in 0..size_y {
-                let mut sprite = Sprite::from_texture(self.textures["grass"].clone());
-
-                sprite.set_position(
-                    x_start - scale * (step_x * x as f64) + scale * (step_x * y as f64),
-                    y_start + scale * (step_y * x as f64) + scale * (step_y * y as f64));
-                sprite.set_scale(scale, scale);
-
-                let id = unsafe{ current_scene() }.add_child(sprite);
-                tiles.tiles.push(tiles::Tile::new(id));
-            }
-        }
-    }
-
-    pub fn run(&mut self) {
-        let (dx, dy) = (0.0, 0.0);
-
-        let mut cursor = [0.0, 0.0];
-        let mut cursor_pressed = [0.0, 0.0];
-
-        let mut scene = unsafe{ current_scene() };
-        let mut tiles = unsafe{ current_tiles() };
-        let mut selection = unsafe{ current_selection() };
-        let window = &mut self.window;
-
-        while let Some(e) = window.next() {
-            scene.event(&e);
-
-            if let Some(Button::Mouse(button)) = e.press_args() {
-                //println!("Pressed mouse button '{:?}'", button);
-                selection.just_pressed = true;
-                selection.pressed = true;
-                selection.released = false;
-            }
-            if let Some(Button::Mouse(button)) = e.release_args() {
-                //println!("Released mouse button '{:?}'", button);
-                selection.pressed = false;
-                selection.just_pressed = false;
-                selection.released = true;
-                for tile in tiles.tiles.iter_mut() {
-                    if tile.state == ai_behavior::State::new(
-                        ai_behavior::Action(tiles::TileState::Selecting)) {
-                        tile.set_state(tiles::TileState::Selected);
-                    } else {
-                        tile.set_state(tiles::TileState::Idle);
-                    }
-                }
-            }
-            e.mouse_cursor(|x, y| {
-                if selection.just_pressed == true {
-                    //println!("Cursor at '{} {} {}'", x, y, pressed);
-                    cursor_pressed = [dx + x, dx + y];
-                    selection.just_pressed = false;
-                }
-                if selection.pressed == true {
-                    cursor = [dx + x, dy + y];
-                }
-            });
-
-            if selection.pressed == true && !selection.just_pressed {
-                selection.coords = [
-                    cursor_pressed,
-                    get_selection_top(
-                    cursor_pressed[0], cursor_pressed[1], cursor[0], cursor[1]),
-                    cursor,
-                    get_selection_top(
-                    cursor[0], cursor[1], cursor_pressed[0], cursor_pressed[1])
-                ];
-
-                for tile in tiles.tiles.iter_mut() {
-                    let sprite = scene.child(tile.id).unwrap();
-                    let pos = sprite.get_position();
-                    if selection.is_selected(pos) {
-                        tile.set_state(tiles::TileState::Selecting);
-                    } else {
-                        tile.set_state(tiles::TileState::Idle);
-                    }
-                }
-            }
-
-            tiles::update_tiles(&e);
-
-            window.draw_2d(&e, |c, g| {
-                clear([0.2, 0.2, 0.2, 0.2], g);
-                scene.draw(c.transform, g);
-                if selection.pressed == true && !selection.just_pressed {
-                    polygon([1.0, 0.0, 0.0, 0.2],
-                        &selection.coords, c.transform, g); 
-                }
-            });
-        }
-    }
+    (vb, glium::index::IndexBuffer::new(display, PrimitiveType::TrianglesList, &ib_data).unwrap())
 }
 
 fn main() {
-    let field_size = 8;
-    let mut game = Game::new();
-    
-    let mut scene: Scene<Texture<Resources>> = Scene::new();
-    let mut tiles = tiles::Tiles::new();
-    let mut selection = Selection::new();
+    let assets = find_folder::Search::ParentsThenKids(3, 3)
+        .for_folder("assets").unwrap();
 
-    let scene_guard = CurrentGuard::new(&mut scene);
-    let tiles_guard = CurrentGuard::new(&mut tiles);
-    let selection_guard = CurrentGuard::new(&mut selection);
+    let (w, h) = (800, 600);
+    let tiles = tiles::Tiles::new_layer_from_heightmap("heightmap_64.png", 1);
+    let mut miners = miners::Miners::new(10);
+    let sprites_count: usize = tiles.tiles.len();
+    println!("Number of sprites: {}", sprites_count);
 
-    game.init();
-    game.make_layer(field_size, field_size);
+    let ortho_matrix: cgmath::Matrix4<f32> = cgmath::ortho(
+        0.0, w as f32, h as f32, 0.0, 0.0, 1.0);
 
-    let mut sprite = Sprite::from_texture(game.textures["miner"].clone());
-    sprite.set_position(300.0, 300.0);
-    sprite.set_scale(2.0, 2.0);
-    let id = unsafe { current_scene() }.add_child(sprite);
+    let sdl_context = sdl2::init().unwrap();
+    let video_subsystem = sdl_context.video().unwrap();
 
-    // Run a sequence of animations.
-    let seq = Sequence(vec![
-        Wait(1.0),
-        Action(MoveBy(1.0, 60.0, 50.0)),
-        Wait(1.0),
-        Action(MoveBy(1.0, 20.0, 20.0)),
-    ]);
-    unsafe{ current_scene() }.run(id, &seq);
+    let gl_attr = video_subsystem.gl_attr();
+    gl_attr.set_context_profile(GLProfile::Core);
+    gl_attr.set_context_version(3, 3);
 
-    game.run();
+    let display = video_subsystem.window("Dvarcraft", w, h)
+        //.resizable()
+        .build_glium()
+        .unwrap();
+    // store all textures in a `Texture2dArray`
+    let tex_files = vec!["grass.png", "water.png", "miner.png"];
+    let texture = {
+        let images = tex_files.iter().map(|&x| {
+            let image = image::open(assets.join(x)).unwrap().to_rgba();
+            let image_dimensions = image.dimensions();
+            glium::texture::RawImage2d::from_raw_rgba(image.into_raw(), image_dimensions).into_raw()
+        }).collect::<Vec<_>>();
+
+        glium::texture::Texture2dArray::new(&display, images).unwrap()
+    };
+
+    // we determine the texture coordinates depending on the ID the of vertex
+    let program = program!(&display,
+       330 => {
+           vertex: "
+            #version 330
+            in vec2 i_position;
+            in uint i_tex_id;
+            out vec2 v_tex_coords;
+            flat out uint v_tex_id;
+            uniform mat4 matrix;
+            void main() {
+                gl_Position = matrix * vec4(i_position, 0.0, 1.0);
+                if (gl_VertexID % 4 == 0) {
+                    v_tex_coords = vec2(0.0, 1.0);
+                } else if (gl_VertexID % 4 == 1) {
+                    v_tex_coords = vec2(1.0, 1.0);
+                } else if (gl_VertexID % 4 == 2) {
+                    v_tex_coords = vec2(0.0, 0.0);
+                } else {
+                    v_tex_coords = vec2(1.0, 0.0);
+                }
+                v_tex_id = i_tex_id;
+            }
+        ",
+
+        fragment: "
+            #version 330
+            uniform sampler2DArray tex;
+            in vec2 v_tex_coords;
+            flat in uint v_tex_id;
+            out vec4 f_color;
+            void main() {
+                f_color = texture(tex, vec3(v_tex_coords, float(v_tex_id)));
+                /*
+                if (f_color.a < 0.5) {
+                    discard;
+                }
+                */
+            }
+        "
+    },
+    ).unwrap();
+
+    let params = glium::DrawParameters {
+        blend: glium::Blend::alpha_blending(),
+        .. Default::default()
+    };
+    let uniforms = uniform! {
+        tex: &texture,
+        matrix: Into::<[[f32; 4]; 4]>::into(ortho_matrix)
+    };
+    let mut start_ns = clock_ticks::precise_time_ns();
+    let mut frames = 0;
+
+    let mut running = true;
+    let mut event_pump = sdl_context.event_pump().unwrap();
+
+    while running {
+        // building the vertex buffer and index buffers that will be filled with the data of
+        // the sprites
+        let (vertex_buffer, index_buffer) = generate_vertices(&display, &tiles.get_tiles());
+        let (vertex_buffer_m, index_buffer_m) = generate_vertices(&display, &miners.get_tiles());
+        // we must only draw the number of sprites that we have written in the vertex buffer
+        // if you only want to draw 20 sprites for example, you should pass `0 .. 20 * 6` instead
+        let ib_slice = index_buffer.slice(0 .. sprites_count * 6).unwrap();
+        let ib_slice_m = index_buffer_m.slice(0 .. 10 * 6).unwrap();
+
+        // drawing a frame
+        let mut target = display.draw();
+        target.clear_color_and_depth((0.0, 0.0, 0.0, 0.0), 1.0);
+        target.draw(&vertex_buffer, &ib_slice, &program, &uniforms, &params).unwrap();
+        target.draw(&vertex_buffer_m, &ib_slice_m, &program, &uniforms, &params).unwrap();
+        target.finish().unwrap();
+
+        // Event loop: polls for events sent to all windows
+        for event in event_pump.poll_iter() {
+            use sdl2::event::Event;
+
+            match event {
+                Event::Quit { .. } => {
+                    running = false;
+                },
+                _ => ()
+            }
+        }
+
+        frames += 1;
+        let duration_ns = clock_ticks::precise_time_ns() - start_ns;
+        let duration_s = (duration_ns as f64) / 1_000_000_000f64;
+        let fps = (frames as f64) / duration_s;
+        if duration_s > 1.0 {
+            start_ns = clock_ticks::precise_time_ns();
+            frames = 0;
+            println!("Duration: {}, count: {}", duration_s, fps);
+        }
+
+    }
 }

@@ -1,7 +1,7 @@
-extern crate uuid;
-
-use piston::input::{ GenericEvent };
-use ai_behavior;
+use vecmath;
+use find_folder;
+use image;
+use image::Pixel;
 
 #[derive(Copy, Clone, PartialEq)]
 pub enum TileState {
@@ -11,22 +11,19 @@ pub enum TileState {
 }
 
 pub struct Tile {
-    pub id: uuid::Uuid,
-    pub state: ai_behavior::State<TileState, ()>,
+    pub position: (f32, f32),
+    pub tex_id: u32,
 }
 
 impl Tile {
     pub fn new(
-        id: uuid::Uuid,
+        position: (f32, f32),
+        tex_id: u32,
     ) -> Tile {
         Tile {
-            id: id,
-            state: ai_behavior::State::new(ai_behavior::Action(TileState::Idle)),
+            position: position,
+            tex_id: tex_id,
         }
-    }
-
-    pub fn set_state(&mut self, state: TileState) {
-        self.state = ai_behavior::State::new(ai_behavior::Action(state)); 
     }
 }
 
@@ -35,47 +32,67 @@ pub struct Tiles {
 }
 
 impl Tiles {
-    pub fn new() -> Tiles {
+    pub fn new_layer_from_heightmap(filename: &str, layer_idx: u8) -> Tiles {
+        let assets = find_folder::Search::ParentsThenKids(3, 3)
+            .for_folder("assets").unwrap();
+        /* Read the height map */
+        let max_layers = 5;
+        let heightmap = image::open(assets.join(filename)).unwrap().to_rgba();
+        let (mut lowest, mut highest) = (255, 0);
+        for pixel in heightmap.pixels() {
+            // assume it's grayscale and only use one channel
+            if pixel[0] < lowest { lowest = pixel[0]; }
+            if pixel[0] > highest { highest = pixel[0]; }
+        }
+        let midpoint = highest / 2;
+        let layer_step = (highest - lowest) / max_layers;
+        println!("Lowest point: {:?}, mid point: {:?}, highest point: {:?}, layer step: {:?}", lowest, midpoint, highest, layer_step);
+
+        let (size_x, size_y) = heightmap.dimensions();
+        println!("Map: {:?}", heightmap.dimensions());
+
+        let mut tiles = Vec::new();
+        let (step_x, step_y) = (33.0, 17.0);
+        let (x_start, y_start) = (0.0, 0.0);
+        let scale = 1.0;
+        for x in 0..size_x {
+            for y in 0..size_y {
+                let pixel = heightmap.get_pixel(x,  y).to_rgb().data;
+                let mut tex_id = 0;
+                if pixel[0] < (layer_idx * layer_step) {
+                    tex_id = 1;
+                }
+
+                tiles.push(
+                    Tile::new((
+                        x_start - scale * (step_x * x as f32) + scale * (step_x * y as f32),
+                        y_start + scale * (step_y * x as f32) + scale * (step_y * y as f32),
+                    ), tex_id)
+                );
+            }
+        }
         Tiles {
-            tiles: Vec::new(),
+            tiles: tiles,
         }
     }
-}
 
-pub fn update_tiles<E: GenericEvent>(e: &E) {
-    use current_tiles;
-    use current_scene;
-    use current_selection;
-
-    let tiles = unsafe { &mut *current_tiles() };
-    let scene = unsafe { &mut *current_scene() };
-    let selection = unsafe { current_selection() };
-
-    for tile in tiles.tiles.iter_mut() {
-        let &mut Tile {
-            ref id,
-            ref mut state,
-        } = tile;
-        let sprite = scene.child_mut(*id).unwrap();
-        state.event(e, &mut |args| {
-             match *args.action {
-                TileState::Selecting => {
-                    if selection.released {
-                        (ai_behavior::Success, 0.0)
-                    } else {
-                        sprite.set_color(0.2, 0.4, 0.5);
-                        (ai_behavior::Running, 0.0)
-                    }
-                },
-                TileState::Selected => {
-                    sprite.set_color(0.7, 0.4, 0.5);
-                    (ai_behavior::Running, 0.0)
-                },
-                TileState::Idle => {
-                    sprite.set_color(1.0, 1.0, 1.0);
-                    (ai_behavior::Running, 0.0)
-                },
+    pub fn assign_closest_selected(&mut self, pos: (f32, f32)) -> Option<usize> {
+        let mut min_dist = 999999.0;
+        let mut idx: Option<usize> = None;
+        for (id, tile) in self.tiles.iter().enumerate() {
+            let tile_pos = tile.position;
+            let a: vecmath::Vector2<f64> = [
+                (pos.0 - tile_pos.0) as f64, (pos.1 - tile_pos.1) as f64];
+            let dist = vecmath::vec2_len(a);
+            if dist < min_dist {
+                min_dist = dist;
+                idx = Some(id);
             }
-        });
+        }
+        idx
+    }
+
+    pub fn get_tiles(&self) -> Vec<&Tile> {
+        self.tiles.iter().map(|ref tile_ref| *tile_ref).collect::<Vec<_>>()
     }
 }
