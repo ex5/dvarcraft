@@ -28,8 +28,9 @@ mod selection;
 struct SpriteVertex {
     i_position: [f32; 2],
     i_tex_id: u32,
+    is_selected: f32,
 }
-implement_vertex!(SpriteVertex, i_position, i_tex_id);
+implement_vertex!(SpriteVertex, i_position, i_tex_id, is_selected);
 
 fn generate_vertices(display: &glium_sdl2::SDL2Facade, tiles: &Vec<&tiles::Tile>) -> (glium::VertexBuffer<SpriteVertex>, glium::index::IndexBuffer<u16>) {
     let sprites_count = tiles.len();
@@ -42,19 +43,29 @@ fn generate_vertices(display: &glium_sdl2::SDL2Facade, tiles: &Vec<&tiles::Tile>
         let tile = &tiles[num];
         let position = tile.position;
         let tex_id = tile.tex_id;
+        let is_selected = match tile.is_selected {
+            true => 0.5, false => 0.0
+        };
 
         sprite[0].i_position[0] = position.0 - 32.0;
         sprite[0].i_position[1] = position.1 + 32.0;
         sprite[0].i_tex_id = tex_id;
+        sprite[0].is_selected = is_selected;
+
         sprite[1].i_position[0] = position.0 + 32.0;
         sprite[1].i_position[1] = position.1 + 32.0;
         sprite[1].i_tex_id = tex_id;
+        sprite[1].is_selected = is_selected;
+
         sprite[2].i_position[0] = position.0 - 32.0;
         sprite[2].i_position[1] = position.1 - 32.0;
         sprite[2].i_tex_id = tex_id;
+        sprite[2].is_selected = is_selected;
+
         sprite[3].i_position[0] = position.0 + 32.0;
         sprite[3].i_position[1] = position.1 - 32.0;
         sprite[3].i_tex_id = tex_id;
+        sprite[3].is_selected = is_selected;
 
         let num = num as u16;
         ib_data.push(num * 4);
@@ -70,7 +81,7 @@ fn generate_vertices(display: &glium_sdl2::SDL2Facade, tiles: &Vec<&tiles::Tile>
 
 fn main() {
     let (w, h) = (800, 600);
-    let tiles = tiles::Tiles::new_layer_from_heightmap("heightmap_64.png", 1);
+    let mut tiles = tiles::Tiles::new_layer_from_heightmap("heightmap_64.png", 1);
     let mut miners = miners::Miners::new(10);
     let sprites_count: usize = tiles.tiles.len();
     println!("Number of sprites: {}", sprites_count);
@@ -112,6 +123,22 @@ fn main() {
     let mut selection = selection::Selection::new();
 
     while running {
+        // get a mouse state
+        let state = events.mouse_state();
+
+        // Create a set of pressed Keys.
+        let buttons = state.pressed_mouse_buttons().collect();
+
+        // Get the difference between the new and old sets.
+        let new_buttons = &buttons - &prev_buttons;
+        let old_buttons = &prev_buttons - &buttons;
+
+        selection.update(&state, &new_buttons, &old_buttons, &buttons);
+
+        if selection.pressed {
+            tiles.update_selected(&selection);
+        }
+
         // building the vertex buffer and index buffers that will be filled with the data of
         // the sprites
         let (vertex_buffer, index_buffer) = generate_vertices(&display, &tiles.get_tiles());
@@ -129,7 +156,6 @@ fn main() {
 
         // Event loop: polls for events sent to all windows
         for event in events.poll_iter() {
-
             match event {
                 Event::KeyDown { keycode: Some(Keycode::Escape), .. } |
                     Event::Quit { .. } => {
@@ -138,17 +164,6 @@ fn main() {
                 _ => ()
             }
         }
-        // get a mouse state
-        let state = events.mouse_state();
-
-        // Create a set of pressed Keys.
-        let buttons = state.pressed_mouse_buttons().collect();
-
-        // Get the difference between the new and old sets.
-        let new_buttons = &buttons - &prev_buttons;
-        let old_buttons = &prev_buttons - &buttons;
-
-        selection.update(&state, &new_buttons, &old_buttons, &buttons);
 
         if selection.pressed {  // draw current selection, if active
             let (vertex_buffer, index_buffer) = selection.generate_vertices(&display);
@@ -169,6 +184,5 @@ fn main() {
             frames = 0;
             println!("Duration: {}, count: {}", duration_s, fps);
         }
-
     }
 }
