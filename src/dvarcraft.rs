@@ -12,25 +12,28 @@ extern crate sdl2;
 
 use glium::{ Surface };
 use glium::index::PrimitiveType;
-use glium::texture::Texture2dDataSource;
 use glium_sdl2::{ DisplayBuild };
+use sdl2::keyboard::Keycode;
 use sdl2::video::GLProfile;
+use sdl2::event::Event;
+use std::collections::HashSet;
 
+mod textures;
+mod shaders;
 mod tiles;
 mod miners;
+mod selection;
 
 #[derive(Copy, Clone)]
-struct Vertex {
+struct SpriteVertex {
     i_position: [f32; 2],
     i_tex_id: u32,
 }
-implement_vertex!(Vertex, i_position, i_tex_id);
+implement_vertex!(SpriteVertex, i_position, i_tex_id);
 
-
-//let display = glium::Display::new(window, context, &events_loop).unwrap();
-fn generate_vertices(display: &glium_sdl2::SDL2Facade, tiles: &Vec<&tiles::Tile>) -> (glium::VertexBuffer<Vertex>, glium::index::IndexBuffer<u16>) {
+fn generate_vertices(display: &glium_sdl2::SDL2Facade, tiles: &Vec<&tiles::Tile>) -> (glium::VertexBuffer<SpriteVertex>, glium::index::IndexBuffer<u16>) {
     let sprites_count = tiles.len();
-    let mut vb: glium::VertexBuffer<Vertex> = glium::VertexBuffer::empty_dynamic(
+    let mut vb: glium::VertexBuffer<SpriteVertex> = glium::VertexBuffer::empty_dynamic(
         display, sprites_count * 4).unwrap();
     let mut ib_data = Vec::with_capacity(sprites_count * 6);
 
@@ -66,17 +69,11 @@ fn generate_vertices(display: &glium_sdl2::SDL2Facade, tiles: &Vec<&tiles::Tile>
 }
 
 fn main() {
-    let assets = find_folder::Search::ParentsThenKids(3, 3)
-        .for_folder("assets").unwrap();
-
     let (w, h) = (800, 600);
     let tiles = tiles::Tiles::new_layer_from_heightmap("heightmap_64.png", 1);
     let mut miners = miners::Miners::new(10);
     let sprites_count: usize = tiles.tiles.len();
     println!("Number of sprites: {}", sprites_count);
-
-    let ortho_matrix: cgmath::Matrix4<f32> = cgmath::ortho(
-        0.0, w as f32, h as f32, 0.0, 0.0, 1.0);
 
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
@@ -86,68 +83,22 @@ fn main() {
     gl_attr.set_context_version(3, 3);
 
     let display = video_subsystem.window("Dvarcraft", w, h)
-        //.resizable()
         .build_glium()
         .unwrap();
-    // store all textures in a `Texture2dArray`
-    let tex_files = vec!["grass.png", "water.png", "miner.png"];
-    let texture = {
-        let images = tex_files.iter().map(|&x| {
-            let image = image::open(assets.join(x)).unwrap().to_rgba();
-            let image_dimensions = image.dimensions();
-            glium::texture::RawImage2d::from_raw_rgba(image.into_raw(), image_dimensions).into_raw()
-        }).collect::<Vec<_>>();
 
-        glium::texture::Texture2dArray::new(&display, images).unwrap()
-    };
-
-    // we determine the texture coordinates depending on the ID the of vertex
-    let program = program!(&display,
-       330 => {
-           vertex: "
-            #version 330
-            in vec2 i_position;
-            in uint i_tex_id;
-            out vec2 v_tex_coords;
-            flat out uint v_tex_id;
-            uniform mat4 matrix;
-            void main() {
-                gl_Position = matrix * vec4(i_position, 0.0, 1.0);
-                if (gl_VertexID % 4 == 0) {
-                    v_tex_coords = vec2(0.0, 1.0);
-                } else if (gl_VertexID % 4 == 1) {
-                    v_tex_coords = vec2(1.0, 1.0);
-                } else if (gl_VertexID % 4 == 2) {
-                    v_tex_coords = vec2(0.0, 0.0);
-                } else {
-                    v_tex_coords = vec2(1.0, 0.0);
-                }
-                v_tex_id = i_tex_id;
-            }
-        ",
-
-        fragment: "
-            #version 330
-            uniform sampler2DArray tex;
-            in vec2 v_tex_coords;
-            flat in uint v_tex_id;
-            out vec4 f_color;
-            void main() {
-                f_color = texture(tex, vec3(v_tex_coords, float(v_tex_id)));
-                /*
-                if (f_color.a < 0.5) {
-                    discard;
-                }
-                */
-            }
-        "
-    },
-    ).unwrap();
+    // texture atlas
+    let texture = textures::load_textures(&display);
+    // textured sprite shader
+    let program = shaders::get_sprite_shader(&display);
+    // selection shader
+    let program_selection = shaders::get_selection_shader(&display);
 
     let params = glium::DrawParameters {
         blend: glium::Blend::alpha_blending(),
         .. Default::default()
     };
+    let ortho_matrix: cgmath::Matrix4<f32> = cgmath::ortho(
+        0.0, w as f32, h as f32, 0.0, 0.0, 1.0);
     let uniforms = uniform! {
         tex: &texture,
         matrix: Into::<[[f32; 4]; 4]>::into(ortho_matrix)
@@ -156,7 +107,9 @@ fn main() {
     let mut frames = 0;
 
     let mut running = true;
-    let mut event_pump = sdl_context.event_pump().unwrap();
+    let mut events = sdl_context.event_pump().unwrap();
+    let mut prev_buttons = HashSet::new();
+    let mut selection = selection::Selection::new();
 
     while running {
         // building the vertex buffer and index buffers that will be filled with the data of
@@ -173,20 +126,40 @@ fn main() {
         target.clear_color_and_depth((0.0, 0.0, 0.0, 0.0), 1.0);
         target.draw(&vertex_buffer, &ib_slice, &program, &uniforms, &params).unwrap();
         target.draw(&vertex_buffer_m, &ib_slice_m, &program, &uniforms, &params).unwrap();
-        target.finish().unwrap();
 
         // Event loop: polls for events sent to all windows
-        for event in event_pump.poll_iter() {
-            use sdl2::event::Event;
+        for event in events.poll_iter() {
 
             match event {
-                Event::Quit { .. } => {
-                    running = false;
-                },
+                Event::KeyDown { keycode: Some(Keycode::Escape), .. } |
+                    Event::Quit { .. } => {
+                        running = false;
+                    },
                 _ => ()
             }
         }
+        // get a mouse state
+        let state = events.mouse_state();
 
+        // Create a set of pressed Keys.
+        let buttons = state.pressed_mouse_buttons().collect();
+
+        // Get the difference between the new and old sets.
+        let new_buttons = &buttons - &prev_buttons;
+        let old_buttons = &prev_buttons - &buttons;
+
+        selection.update(&state, &new_buttons, &old_buttons, &buttons);
+
+        if selection.pressed {  // draw current selection, if active
+            let (vertex_buffer, index_buffer) = selection.generate_vertices(&display);
+            target.draw(&vertex_buffer, &index_buffer, &program_selection, &uniforms, &params).unwrap();
+        }
+
+        target.finish().unwrap();
+
+        prev_buttons = buttons;
+
+        // calculate FPS
         frames += 1;
         let duration_ns = clock_ticks::precise_time_ns() - start_ns;
         let duration_s = (duration_ns as f64) / 1_000_000_000f64;
