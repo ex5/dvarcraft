@@ -3,16 +3,12 @@ use find_folder;
 use image;
 use image::Pixel;
 
-#[derive(Copy, Clone, PartialEq)]
-pub enum TileState {
-    Selected,
-    Selecting,
-    Idle,
-}
+use selection;
 
 pub struct Tile {
     pub position: (f32, f32),
     pub tex_id: u32,
+    pub is_selected: bool,
 }
 
 impl Tile {
@@ -23,6 +19,7 @@ impl Tile {
         Tile {
             position: position,
             tex_id: tex_id,
+            is_selected: false,
         }
     }
 }
@@ -94,5 +91,20 @@ impl Tiles {
 
     pub fn get_tiles(&self) -> Vec<&Tile> {
         self.tiles.iter().map(|ref tile_ref| *tile_ref).collect::<Vec<_>>()
+    }
+
+    pub fn update_selected(&mut self, selection: &selection::Selection) {
+        // find selected tiles
+        for tile in self.tiles.iter_mut() {
+            if selection.pressed {
+                if selection.is_selected(tile.position) {
+                    tile.is_selected = true;
+                } else {
+                    tile.is_selected = false;
+                }
+            } else {
+                tile.is_selected = false;
+            }
+        }
     }
 }

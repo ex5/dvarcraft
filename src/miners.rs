@@ -22,10 +22,7 @@ impl Miner {
         tex_id: u32,
     ) -> Miner {
         Miner {
-            tile: tiles::Tile {
-                position: position,
-                tex_id: tex_id,
-            },
+            tile: tiles::Tile::new(position, tex_id),
             state: MinerState::Idle,
         }
     }
