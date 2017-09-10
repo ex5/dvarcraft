@@ -8,7 +8,6 @@ name = "dvarcraft"
 path = "src/dvarcraft.rs"
 
 [dependencies]
-vecmath = "*"
 lazy_static = "0.2"
 smallvec = "0.4.2"
 fnv = "1.0.5"

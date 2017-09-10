@@ -1,19 +1,23 @@
-use vecmath;
 use find_folder;
 use image;
+use rand;
+use rand::Rng;
 use image::Pixel;
+use cgmath::{ InnerSpace, Vector2 };
 
 use selection;
+use std::iter::Iterator;
 
+#[derive(Debug)]
 pub struct Tile {
-    pub position: (f32, f32),
+    pub position: Vector2<f32>,
     pub tex_id: u32,
     pub is_selected: bool,
 }
 
 impl Tile {
     pub fn new(
-        position: (f32, f32),
+        position: Vector2<f32>,
         tex_id: u32,
     ) -> Tile {
         Tile {
@@ -26,6 +30,8 @@ impl Tile {
 
 pub struct Tiles {
     pub tiles: Vec<Tile>,
+    pub width: usize,
+    pub height: usize,
 }
 
 impl Tiles {
@@ -61,7 +67,7 @@ impl Tiles {
                 }
 
                 tiles.push(
-                    Tile::new((
+                    Tile::new(Vector2::new(
                         x_start - scale * (step_x * x as f32) + scale * (step_x * y as f32),
                         y_start + scale * (step_y * x as f32) + scale * (step_y * y as f32),
                     ), tex_id)
@@ -70,23 +76,53 @@ impl Tiles {
         }
         Tiles {
             tiles: tiles,
+            width: size_x as usize,
+            height: size_y as usize,
         }
     }
 
-    pub fn assign_closest_selected(&mut self, pos: (f32, f32)) -> Option<usize> {
+    pub fn assign_closest_selected(&mut self, pos: Vector2<f32>) -> Option<usize> {
         let mut min_dist = 999999.0;
         let mut idx: Option<usize> = None;
         for (id, tile) in self.tiles.iter().enumerate() {
             let tile_pos = tile.position;
-            let a: vecmath::Vector2<f64> = [
-                (pos.0 - tile_pos.0) as f64, (pos.1 - tile_pos.1) as f64];
-            let dist = vecmath::vec2_len(a);
+            let dist = (pos - tile_pos).magnitude();
             if dist < min_dist {
                 min_dist = dist;
                 idx = Some(id);
             }
         }
         idx
+    }
+
+    pub fn get_random(&self, count: u8) -> Vec<&Tile>{
+        let mut rng = rand::thread_rng();
+        (0..count).map(
+            |_| rng.choose(&self.tiles).unwrap()
+        ).collect::<Vec<_>>()
+    }
+
+    pub fn get_closest_random(&self, pos: Vector2<f32>) -> Option<&Tile> {
+        let w_step = self.width as i32;
+        let nearby_idx = [
+            -1, -2, 1, 2, - w_step , w_step, - w_step + 1, - w_step - 1,
+             w_step + 1,  w_step - 1];
+        let mut res: Option<&Tile> = None;
+        for (id, tile) in self.tiles.iter().enumerate() {
+            let tile_pos = tile.position;
+            let dist = (pos - tile_pos).magnitude();
+            if dist < 60.0 {
+                let choices = nearby_idx.iter().cloned()
+                    .filter(|x|
+                            (((id as i32) + x) as usize) < self.tiles.len()
+                         && (id as i32) + x >= 0)
+                    .map(|x| (id as i32 + x) as usize).collect::<Vec<_>>();
+                println!("CHOICES: {:?} for tile {:?}", choices, tile);
+                res = Some(&self.tiles[*rand::thread_rng().choose(&choices).unwrap()]);
+                break;
+            }
+        }
+        res
     }
 
     pub fn get_tiles(&self) -> Vec<&Tile> {
