@@ -4,7 +4,6 @@ extern crate rand;
 extern crate clock_ticks;
 extern crate cgmath;
 extern crate image;
-extern crate vecmath;
 extern crate find_folder;
 
 extern crate glium_sdl2;
@@ -47,23 +46,23 @@ fn generate_vertices(display: &glium_sdl2::SDL2Facade, tiles: &Vec<&tiles::Tile>
             true => 0.5, false => 0.0
         };
 
-        sprite[0].i_position[0] = position.0 - 32.0;
-        sprite[0].i_position[1] = position.1 + 32.0;
+        sprite[0].i_position[0] = position.x - 32.0;
+        sprite[0].i_position[1] = position.y + 32.0;
         sprite[0].i_tex_id = tex_id;
         sprite[0].is_selected = is_selected;
 
-        sprite[1].i_position[0] = position.0 + 32.0;
-        sprite[1].i_position[1] = position.1 + 32.0;
+        sprite[1].i_position[0] = position.x + 32.0;
+        sprite[1].i_position[1] = position.y + 32.0;
         sprite[1].i_tex_id = tex_id;
         sprite[1].is_selected = is_selected;
 
-        sprite[2].i_position[0] = position.0 - 32.0;
-        sprite[2].i_position[1] = position.1 - 32.0;
+        sprite[2].i_position[0] = position.x - 32.0;
+        sprite[2].i_position[1] = position.y - 32.0;
         sprite[2].i_tex_id = tex_id;
         sprite[2].is_selected = is_selected;
 
-        sprite[3].i_position[0] = position.0 + 32.0;
-        sprite[3].i_position[1] = position.1 - 32.0;
+        sprite[3].i_position[0] = position.x + 32.0;
+        sprite[3].i_position[1] = position.y - 32.0;
         sprite[3].i_tex_id = tex_id;
         sprite[3].is_selected = is_selected;
 
@@ -82,7 +81,8 @@ fn generate_vertices(display: &glium_sdl2::SDL2Facade, tiles: &Vec<&tiles::Tile>
 fn main() {
     let (w, h) = (800, 600);
     let mut tiles = tiles::Tiles::new_layer_from_heightmap("heightmap_64.png", 1);
-    let mut miners = miners::Miners::new(10);
+    let mut miners = miners::Miners::new(10, &tiles);
+    let miners_count: usize = miners.miners.len();
     let sprites_count: usize = tiles.tiles.len();
     println!("Number of sprites: {}", sprites_count);
 
@@ -115,6 +115,7 @@ fn main() {
         matrix: Into::<[[f32; 4]; 4]>::into(ortho_matrix)
     };
     let mut start_ns = clock_ticks::precise_time_ns();
+    let mut prev_ns = start_ns;
     let mut frames = 0;
 
     let mut running = true;
@@ -123,6 +124,9 @@ fn main() {
     let mut selection = selection::Selection::new();
 
     while running {
+        let now_ns = clock_ticks::precise_time_ns();
+        let tick_ns = now_ns - prev_ns;
+        let tick_s = (tick_ns as f64) / 1_000_000_000f64;
         // get a mouse state
         let state = events.mouse_state();
 
@@ -134,6 +138,7 @@ fn main() {
         let old_buttons = &prev_buttons - &buttons;
 
         selection.update(&state, &new_buttons, &old_buttons, &buttons);
+        miners.update(tick_s as f32, &tiles);
 
         if selection.pressed {
             tiles.update_selected(&selection);
@@ -146,7 +151,7 @@ fn main() {
         // we must only draw the number of sprites that we have written in the vertex buffer
         // if you only want to draw 20 sprites for example, you should pass `0 .. 20 * 6` instead
         let ib_slice = index_buffer.slice(0 .. sprites_count * 6).unwrap();
-        let ib_slice_m = index_buffer_m.slice(0 .. 10 * 6).unwrap();
+        let ib_slice_m = index_buffer_m.slice(0 .. miners_count * 6).unwrap();
 
         // drawing a frame
         let mut target = display.draw();
@@ -184,5 +189,6 @@ fn main() {
             frames = 0;
             println!("Duration: {}, count: {}", duration_s, fps);
         }
+        prev_ns = now_ns;
     }
 }

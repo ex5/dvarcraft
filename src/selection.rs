@@ -1,7 +1,7 @@
 use glium;
 use glium_sdl2;
 use sdl2;
-use vecmath;
+use cgmath::Vector2;
 use glium::index::PrimitiveType;
 use std::collections::HashSet;
 
@@ -13,20 +13,17 @@ pub struct SelectionVertex {
 
 implement_vertex!(SelectionVertex, position, color);
 
-/// The type used for 2D vectors.
-type Vec2d<f32> = vecmath::Vector2<f32>;
-
 /// Returns a number that tells which side it is relative to a line.
 ///
 /// Computes the cross product of the vector that gives the line
 /// with the vector between point and starting point of line.
 /// One side of the line has opposite sign of the other.
 #[inline(always)]
-fn line_side(line: [f32; 4], v: Vec2d<f32>) -> f32
+fn line_side(line: [f32; 4], v: Vector2<f32>) -> f32
 {
     let (ax, ay) = (line[0], line[1]);
     let (bx, by) = (line[2], line[3]);
-    (bx - ax) * (v[1] - ay) - (by - ay) * (v[0] - ax)
+    (bx - ax) * (v.x - ay) - (by - ay) * (v.y - ax)
 }
 
 /// Returns true if point is inside triangle.
@@ -34,7 +31,7 @@ fn line_side(line: [f32; 4], v: Vec2d<f32>) -> f32
 /// This is done by computing a `side` number for each edge.
 /// If the number is inside if it is on the same side for all edges.
 /// Might break for very small triangles.
-fn inside_triangle(triangle: [[f32; 2]; 3], v: Vec2d<f32>) -> bool {
+fn inside_triangle(triangle: [[f32; 2]; 3], v: Vector2<f32>) -> bool {
     let _0 = 0.0;
 
     let ax = triangle[0][0];
@@ -77,9 +74,7 @@ fn get_selection_top(xy0: [f32; 2], xy1: [f32; 2]) -> [f32; 2] {
 #[derive(Copy, Clone)]
 pub enum SelectionState {
     Inactive,
-    Selecting,
     Confirmed,
-    Cancelled,
 }
 
 pub struct Selection {
@@ -99,13 +94,9 @@ impl Selection {
         }
     }
 
-    pub fn is_selected(&self, pos: (f32, f32)) -> bool {
-        inside_triangle(
-            [self.coords[0], self.coords[1], self.coords[2]],
-            [pos.0, pos.1]) ||
-        inside_triangle(
-            [self.coords[0], self.coords[2], self.coords[3]],
-            [pos.0, pos.1])
+    pub fn is_selected(&self, pos: Vector2<f32>) -> bool {
+        inside_triangle([self.coords[0], self.coords[1], self.coords[2]], pos) ||
+        inside_triangle([self.coords[0], self.coords[2], self.coords[3]], pos)
     }
 
     pub fn update(&mut self, state: &sdl2::mouse::MouseState,
