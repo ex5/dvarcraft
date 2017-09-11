@@ -30,6 +30,7 @@ impl Tile {
 
 pub struct Tiles {
     pub tiles: Vec<Tile>,
+    pub walkable: Vec<usize>,
     pub width: usize,
     pub height: usize,
 }
@@ -55,27 +56,33 @@ impl Tiles {
         println!("Map: {:?}", heightmap.dimensions());
 
         let mut tiles = Vec::new();
+        let mut walkable = Vec::new();
         let (step_x, step_y) = (33.0, 17.0);
-        let (x_start, y_start) = (0.0, 0.0);
-        let scale = 1.0;
+        let (x_start, y_start) = (0.0, step_y * size_y as f32);
         for x in 0..size_x {
             for y in 0..size_y {
                 let pixel = heightmap.get_pixel(x,  y).to_rgb().data;
-                let mut tex_id = 0;
+                let mut tex_id = 0; // grass
                 if pixel[0] < (layer_idx * layer_step) {
-                    tex_id = 1;
+                    tex_id = 1; // water
                 }
 
                 tiles.push(
                     Tile::new(Vector2::new(
-                        x_start - scale * (step_x * x as f32) + scale * (step_x * y as f32),
-                        y_start + scale * (step_y * x as f32) + scale * (step_y * y as f32),
+                        x_start - step_x * x as f32 + step_x * y as f32,
+                        y_start - step_y * x as f32 - step_y * y as f32,
                     ), tex_id)
                 );
+
+                if tex_id == 0 {
+                    // store walkable index
+                    walkable.push(tiles.len());
+                }
             }
         }
         Tiles {
             tiles: tiles,
+            walkable: walkable,
             width: size_x as usize,
             height: size_y as usize,
         }
@@ -95,11 +102,12 @@ impl Tiles {
         idx
     }
 
-    pub fn get_random(&self, count: u8) -> Vec<&Tile>{
+    pub fn get_random_walkable(&self, count: u8) -> Vec<&Tile>{
         let mut rng = rand::thread_rng();
         (0..count).map(
-            |_| rng.choose(&self.tiles).unwrap()
-        ).collect::<Vec<_>>()
+            |_| rng.choose(&self.walkable).unwrap()
+        )
+        .map(|&i| &self.tiles[i]).collect::<Vec<_>>()
     }
 
     pub fn get_closest_random(&self, pos: Vector2<f32>) -> Option<&Tile> {
