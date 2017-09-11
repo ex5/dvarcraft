@@ -44,7 +44,7 @@ impl Miner {
 impl Miners {
     pub fn new(count: u8, tiles: &tiles::Tiles) -> Miners {
         let mut miners = Vec::new();
-        for tile in tiles.get_random(count) {
+        for tile in tiles.get_random_walkable(count) {
             miners.push(Miner::new(tile.position, 2));
         }
         Miners {

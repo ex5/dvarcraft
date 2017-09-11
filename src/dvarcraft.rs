@@ -33,6 +33,7 @@ implement_vertex!(SpriteVertex, i_position, i_tex_id, is_selected);
 
 fn generate_vertices(display: &glium_sdl2::SDL2Facade, tiles: &Vec<&tiles::Tile>) -> (glium::VertexBuffer<SpriteVertex>, glium::index::IndexBuffer<u16>) {
     let sprites_count = tiles.len();
+    let sprite_width = 32.0;
     let mut vb: glium::VertexBuffer<SpriteVertex> = glium::VertexBuffer::empty_dynamic(
         display, sprites_count * 4).unwrap();
     let mut ib_data = Vec::with_capacity(sprites_count * 6);
@@ -46,33 +47,33 @@ fn generate_vertices(display: &glium_sdl2::SDL2Facade, tiles: &Vec<&tiles::Tile>
             true => 0.5, false => 0.0
         };
 
-        sprite[0].i_position[0] = position.x - 32.0;
-        sprite[0].i_position[1] = position.y + 32.0;
+        sprite[0].i_position[0] = position.x - sprite_width;
+        sprite[0].i_position[1] = position.y + sprite_width;
         sprite[0].i_tex_id = tex_id;
         sprite[0].is_selected = is_selected;
 
-        sprite[1].i_position[0] = position.x + 32.0;
-        sprite[1].i_position[1] = position.y + 32.0;
+        sprite[1].i_position[0] = position.x + sprite_width;
+        sprite[1].i_position[1] = position.y + sprite_width;
         sprite[1].i_tex_id = tex_id;
         sprite[1].is_selected = is_selected;
 
-        sprite[2].i_position[0] = position.x - 32.0;
-        sprite[2].i_position[1] = position.y - 32.0;
+        sprite[2].i_position[0] = position.x - sprite_width;
+        sprite[2].i_position[1] = position.y - sprite_width;
         sprite[2].i_tex_id = tex_id;
         sprite[2].is_selected = is_selected;
 
-        sprite[3].i_position[0] = position.x + 32.0;
-        sprite[3].i_position[1] = position.y - 32.0;
+        sprite[3].i_position[0] = position.x + sprite_width;
+        sprite[3].i_position[1] = position.y - sprite_width;
         sprite[3].i_tex_id = tex_id;
         sprite[3].is_selected = is_selected;
 
-        let num = num as u16;
-        ib_data.push(num * 4);
-        ib_data.push(num * 4 + 1);
-        ib_data.push(num * 4 + 2);
-        ib_data.push(num * 4 + 1);
-        ib_data.push(num * 4 + 3);
-        ib_data.push(num * 4 + 2);
+        let num = (num * 4) as u16;
+        ib_data.push(num);
+        ib_data.push(num + 1);
+        ib_data.push(num + 2);
+        ib_data.push(num + 1);
+        ib_data.push(num + 3);
+        ib_data.push(num + 2);
     }
 
     (vb, glium::index::IndexBuffer::new(display, PrimitiveType::TrianglesList, &ib_data).unwrap())
@@ -80,7 +81,7 @@ fn generate_vertices(display: &glium_sdl2::SDL2Facade, tiles: &Vec<&tiles::Tile>
 
 fn main() {
     let (w, h) = (800, 600);
-    let mut tiles = tiles::Tiles::new_layer_from_heightmap("heightmap_64.png", 1);
+    let mut tiles = tiles::Tiles::new_layer_from_heightmap("heightmap_64.png", 2);
     let mut miners = miners::Miners::new(10, &tiles);
     let miners_count: usize = miners.miners.len();
     let sprites_count: usize = tiles.tiles.len();
@@ -108,12 +109,8 @@ fn main() {
         blend: glium::Blend::alpha_blending(),
         .. Default::default()
     };
-    let ortho_matrix: cgmath::Matrix4<f32> = cgmath::ortho(
-        0.0, w as f32, h as f32, 0.0, 0.0, 1.0);
-    let uniforms = uniform! {
-        tex: &texture,
-        matrix: Into::<[[f32; 4]; 4]>::into(ortho_matrix)
-    };
+    let mut zoom = 1.0;
+    let (viewport_w, viewport_h) = (w as f32, h as f32);
     let mut start_ns = clock_ticks::precise_time_ns();
     let mut prev_ns = start_ns;
     let mut frames = 0;
@@ -144,6 +141,17 @@ fn main() {
             tiles.update_selected(&selection);
         }
 
+        // construct uniforms, take current zoom into account
+        // left, right, bottom, top, near, far
+        //glOrtho( -width/2*zoom, width/2*zoom, -height/2*zoom, height/2*zoom, -1, 1 );
+        let ortho_matrix: cgmath::Matrix4<f32> = cgmath::ortho(
+            - viewport_w / 2.0 * zoom, viewport_w / 2.0 * zoom,
+            - viewport_h / 2.0 * zoom, viewport_h / 2.0 * zoom,
+            -1.0, 1.0);
+        let uniforms = uniform! {
+            tex: &texture,
+            matrix: Into::<[[f32; 4]; 4]>::into(ortho_matrix)
+        };
         // building the vertex buffer and index buffers that will be filled with the data of
         // the sprites
         let (vertex_buffer, index_buffer) = generate_vertices(&display, &tiles.get_tiles());
@@ -166,6 +174,12 @@ fn main() {
                     Event::Quit { .. } => {
                         running = false;
                     },
+                Event::KeyDown { keycode: Some(Keycode::Equals), .. } => {
+                    zoom -= 0.5;
+                },
+                Event::KeyDown { keycode: Some(Keycode::Minus), .. } => {
+                    zoom += 0.5;
+                },
                 _ => ()
             }
         }
