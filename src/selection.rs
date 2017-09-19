@@ -99,20 +99,20 @@ impl Selection {
         inside_triangle([self.coords[0], self.coords[2], self.coords[3]], pos)
     }
 
-    pub fn update(&mut self, state: &sdl2::mouse::MouseState,
+    pub fn update(&mut self, x: f32, y: f32,
                   new_buttons: &HashSet<sdl2::mouse::MouseButton>,
                   old_buttons: &HashSet<sdl2::mouse::MouseButton>,
                   buttons: &HashSet<sdl2::mouse::MouseButton>) {
         let left = &sdl2::mouse::MouseButton::Left; 
         if buttons.contains(left) {
-            self.coords[2] = [state.x() as f32, state.y() as f32];
+            self.coords[2] = [x, y];
         }
 
         if new_buttons.contains(left) {
             self.pressed = true;
             self.released = false;
             if !old_buttons.contains(left) { // just pressed
-                self.coords[0] = [state.x() as f32, state.y() as f32];
+                self.coords[0] = [x, y];
                 println!("Just pressed LMB at {:?}", self.coords[0]);
             }
         } else if old_buttons.contains(left) {

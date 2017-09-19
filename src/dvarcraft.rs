@@ -134,7 +134,10 @@ fn main() {
         let new_buttons = &buttons - &prev_buttons;
         let old_buttons = &prev_buttons - &buttons;
 
-        selection.update(&state, &new_buttons, &old_buttons, &buttons);
+        let x = state.x() as f32 - viewport_w / 2.0;
+        let y = viewport_h / 2.0 - state.y() as f32;
+
+        selection.update(x, y, &new_buttons, &old_buttons, &buttons);
         miners.update(tick_s as f32, &tiles);
 
         if selection.pressed {
