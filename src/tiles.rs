@@ -7,6 +7,7 @@ use cgmath::{ InnerSpace, Vector2 };
 
 use selection;
 use std::iter::Iterator;
+use quadtree::QuadTree;
 
 #[derive(Debug)]
 pub struct Tile {
@@ -33,6 +34,7 @@ pub struct Tiles {
     pub walkable: Vec<usize>,
     pub width: usize,
     pub height: usize,
+    pub tree: QuadTree,
 }
 
 impl Tiles {
@@ -57,8 +59,24 @@ impl Tiles {
 
         let mut tiles = Vec::new();
         let mut walkable = Vec::new();
-        let (step_x, step_y) = (33.0, 17.0);
+
+        let sprite_size = 64.0;
+        let (step_x, step_y) = (sprite_size / 2.0, 17.0);
         let (x_start, y_start) = (0.0, step_y * size_y as f32);
+
+        // pre-build a quadtree:
+        let region_width = sprite_size * size_x as f32;
+        let region_height = 2.0 * step_y * size_y as f32;
+        let mut tree = QuadTree {
+            min_width: sprite_size,
+            branches: vec![],
+            tiles: vec![],
+            x: - region_width / 2.0,
+            y: - region_height / 2.0,
+            width: region_width,
+            height: region_height,
+        };
+        tree.split();
         for x in 0..size_x {
             for y in 0..size_y {
                 let pixel = heightmap.get_pixel(x,  y).to_rgb().data;
@@ -74,17 +92,22 @@ impl Tiles {
                     ), tex_id)
                 );
 
+                let last_id = tiles.len() - 1;
+
                 if tex_id == 0 {
                     // store walkable index
-                    walkable.push(tiles.len());
+                    walkable.push(last_id);
                 }
+                tree.insert(&tiles[last_id].position, last_id);
             }
         }
+
         Tiles {
             tiles: tiles,
             walkable: walkable,
             width: size_x as usize,
             height: size_y as usize,
+            tree: tree,
         }
     }
 
@@ -149,6 +172,17 @@ impl Tiles {
             } else {
                 tile.is_selected = false;
             }
+        }
+    }
+
+    pub fn tile_at(&mut self, position: Vector2<f32>) -> Option<&Tile> {
+        let tile_id = self.tree.find(&position);
+        if tile_id.is_some() {
+            let i = tile_id.unwrap();
+            self.tiles[i].is_selected = true;
+            Some(&self.tiles[i])
+        } else {
+            None
         }
     }
 }

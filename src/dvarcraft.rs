@@ -22,6 +22,7 @@ mod shaders;
 mod tiles;
 mod miners;
 mod selection;
+mod quadtree;
 
 #[derive(Copy, Clone)]
 struct SpriteVertex {
@@ -119,6 +120,7 @@ fn main() {
     let mut events = sdl_context.event_pump().unwrap();
     let mut prev_buttons = HashSet::new();
     let mut selection = selection::Selection::new();
+    let mut cur_tile: Option<usize> = None;
 
     while running {
         let now_ns = clock_ticks::precise_time_ns();
@@ -137,6 +139,22 @@ fn main() {
         let x = state.x() as f32 - viewport_w / 2.0;
         let y = viewport_h / 2.0 - state.y() as f32;
 
+        // right mouse click
+        let right = &sdl2::mouse::MouseButton::Right;
+        if new_buttons.contains(right) {
+            println!("Mouse coord: {:?}, {:?}", x, y);
+            let picked_tile_id = tiles.tree.find(&cgmath::Vector2::new(x * zoom, y * zoom));
+            if cur_tile.is_some() {
+                tiles.tiles[cur_tile.unwrap()].is_selected = false;
+            }
+            if picked_tile_id.is_some() {
+                let sel_id = picked_tile_id.unwrap();
+                tiles.tiles[sel_id].is_selected = true;
+                println!("Sprite coords: {:?}", tiles.tiles[sel_id].position);
+                cur_tile = Some(sel_id);
+            }
+            println!("Clicked at tile: {:?}", picked_tile_id);
+        }
         selection.update(x, y, &new_buttons, &old_buttons, &buttons);
         miners.update(tick_s as f32, &tiles);
 
