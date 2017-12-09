@@ -1,8 +1,5 @@
-use glium;
-use glium_sdl2;
 use sdl2;
 use cgmath::Vector2;
-use glium::index::PrimitiveType;
 use std::collections::HashSet;
 
 #[derive(Copy, Clone)]
@@ -11,7 +8,7 @@ pub struct SelectionVertex {
     color: [f32; 4],
 }
 
-implement_vertex!(SelectionVertex, position, color);
+//implement_vertex!(SelectionVertex, position, color);
 
 /// Returns a number that tells which side it is relative to a line.
 ///
@@ -129,7 +126,8 @@ impl Selection {
         ];
     }
 
-    pub fn generate_vertices(&self, display: &glium_sdl2::SDL2Facade) -> (glium::VertexBuffer<SelectionVertex>, glium::index::IndexBuffer<u16>) {
+    pub fn generate_vertices(&self, display: String) -> String {
+        /*
         (glium::VertexBuffer::new(display, 
              &[
              SelectionVertex { position: self.coords[0], color: [1.0, 1.0, 0.0, 0.7] },
@@ -140,5 +138,7 @@ impl Selection {
         ).unwrap(),
         glium::IndexBuffer::new(display, PrimitiveType::TrianglesList,
                                 &[0u16, 1, 2, 0u16, 2, 3]).unwrap())
+        */
+        String::new()
     }
 }
