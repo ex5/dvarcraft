@@ -1,131 +1,203 @@
-#[macro_use]
-extern crate glium;
+#[macro_use] extern crate gfx;
+extern crate env_logger;
 extern crate rand;
-extern crate clock_ticks;
+extern crate sdl2;
+extern crate gfx_core;
+//extern crate gfx_corell;
+extern crate gfx_device_gl;
+extern crate gfx_window_sdl;
 extern crate cgmath;
 extern crate image;
 extern crate find_folder;
+extern crate clock_ticks;
 
-extern crate glium_sdl2;
-extern crate sdl2;
-
-use glium::{ Surface };
-use glium::index::PrimitiveType;
-use glium_sdl2::{ DisplayBuild };
-use sdl2::keyboard::Keycode;
-use sdl2::video::GLProfile;
-use sdl2::event::Event;
-use std::collections::HashSet;
-
+mod support;
 mod textures;
-mod shaders;
-mod tiles;
-mod miners;
 mod selection;
 mod quadtree;
+mod miners;
+mod tiles;
 
-#[derive(Copy, Clone)]
-struct SpriteVertex {
-    i_position: [f32; 2],
-    i_tex_id: u32,
-    is_selected: f32,
-}
-implement_vertex!(SpriteVertex, i_position, i_tex_id, is_selected);
+use gfx::{Device, GraphicsPoolExt};
+use support::{BackbufferView, ColorFormat};
+use std::collections::HashSet;
+use sdl2::event::Event;
+use sdl2::keyboard::Keycode;
 
-fn generate_vertices(display: &glium_sdl2::SDL2Facade, tiles: &Vec<&tiles::Tile>) -> (glium::VertexBuffer<SpriteVertex>, glium::index::IndexBuffer<u16>) {
-    let sprites_count = tiles.len();
-    let sprite_width = 32.0;
-    let mut vb: glium::VertexBuffer<SpriteVertex> = glium::VertexBuffer::empty_dynamic(
-        display, sprites_count * 4).unwrap();
-    let mut ib_data = Vec::with_capacity(sprites_count * 6);
+const SPRITE_WIDTH: f32 = 32.0;
+const SPRITE_VERTICES: [Vertex; 4] = [
+    Vertex { position: [-SPRITE_WIDTH,  SPRITE_WIDTH] },
+    Vertex { position: [ SPRITE_WIDTH,  SPRITE_WIDTH] },
+    Vertex { position: [-SPRITE_WIDTH, -SPRITE_WIDTH] },
+    Vertex { position: [ SPRITE_WIDTH, -SPRITE_WIDTH] },
+];
 
-    // initializing with positions and texture IDs
-    for (num, sprite) in vb.map().chunks_mut(4).enumerate() {
-        let tile = &tiles[num];
-        let position = tile.position;
-        let tex_id = tile.tex_id;
-        let is_selected = match tile.is_selected {
-            true => 0.5, false => 0.0
-        };
+const SPRITE_INDICES: [u16; 6] = [0, 1, 2, 1, 3, 2];
 
-        sprite[0].i_position[0] = position.x - sprite_width;
-        sprite[0].i_position[1] = position.y + sprite_width;
-        sprite[0].i_tex_id = tex_id;
-        sprite[0].is_selected = is_selected;
-
-        sprite[1].i_position[0] = position.x + sprite_width;
-        sprite[1].i_position[1] = position.y + sprite_width;
-        sprite[1].i_tex_id = tex_id;
-        sprite[1].is_selected = is_selected;
-
-        sprite[2].i_position[0] = position.x - sprite_width;
-        sprite[2].i_position[1] = position.y - sprite_width;
-        sprite[2].i_tex_id = tex_id;
-        sprite[2].is_selected = is_selected;
-
-        sprite[3].i_position[0] = position.x + sprite_width;
-        sprite[3].i_position[1] = position.y - sprite_width;
-        sprite[3].i_tex_id = tex_id;
-        sprite[3].is_selected = is_selected;
-
-        let num = (num * 4) as u16;
-        ib_data.push(num);
-        ib_data.push(num + 1);
-        ib_data.push(num + 2);
-        ib_data.push(num + 1);
-        ib_data.push(num + 3);
-        ib_data.push(num + 2);
+gfx_defines!{
+    vertex Vertex {
+        position: [f32; 2] = "i_position",
     }
 
-    (vb, glium::index::IndexBuffer::new(display, PrimitiveType::TrianglesList, &ib_data).unwrap())
+    // color format: 0xRRGGBBAA
+    vertex Instance {
+        translate: [f32; 2] = "a_Translate",
+        tex_id: u32 = "i_tex_id",
+        is_selected: f32 = "is_selected",
+    }
+
+    pipeline pipe {
+        vertex: gfx::VertexBuffer<Vertex> = (),
+        instance: gfx::InstanceBuffer<Instance> = (),
+        scale: gfx::Global<f32> = "u_Scale",
+        matrix: gfx::Global<[[f32; 4]; 4]> = "matrix",
+        tex: gfx::TextureSampler<[f32; 4]> = "tex",
+        out: gfx::BlendTarget<ColorFormat> = ("f_color", gfx::state::MASK_ALL, gfx::preset::blend::ALPHA),
+    }
 }
 
-fn main() {
-    let (w, h) = (800, 600);
-    let mut tiles = tiles::Tiles::new_layer_from_heightmap("heightmap_64.png", 2);
-    let mut miners = miners::Miners::new(10, &tiles);
-    let miners_count: usize = miners.miners.len();
-    let sprites_count: usize = tiles.tiles.len();
-    println!("Number of sprites: {}", sprites_count);
+fn fill_instances(instances: &mut [Instance], start_idx: usize, tiles: &Vec<&tiles::Tile>) {
+    for (i, tile) in tiles.iter().enumerate() {
+        instances[start_idx + i] = Instance {
+            translate: [tile.position.x, tile.position.y],
+            tex_id: tile.tex_id,
+            is_selected: match tile.is_selected { true => 0.5, false => 0.0 },
+        };
+    }
+ }
 
-    let sdl_context = sdl2::init().unwrap();
-    let video_subsystem = sdl_context.video().unwrap();
+const MAX_INSTANCE_COUNT: usize = 2048;
 
-    let gl_attr = video_subsystem.gl_attr();
-    gl_attr.set_context_profile(GLProfile::Core);
-    gl_attr.set_context_version(3, 3);
+pub struct App<B: gfx::Backend> {
+    running: bool,
+    zoom: f32,
+    viewport_w: f32,
+    viewport_h: f32,
+    views: Vec<BackbufferView<B::Resources>>,
+    pso: gfx::PipelineState<B::Resources, pipe::Meta>,
+    data: pipe::Data<B::Resources>,
+    slice: gfx::Slice<B::Resources>,
+    tiles: tiles::Tiles,
+    miners: miners::Miners,
+    instance_count: usize,
+    //upload: gfx::handle::Buffer<B::Resources, Instance>,
+    prev_buttons: HashSet<sdl2::mouse::MouseButton>,
+    selection: selection::Selection,
+    cur_tile: Option<usize>,
+}
 
-    let display = video_subsystem.window("Dvarcraft", w, h)
-        .build_glium()
-        .unwrap();
+impl<B: gfx::Backend> support::Application<B> for App<B> {
+    fn new(device: &mut B::Device,
+           _: &mut gfx::queue::GraphicsQueue<B>,
+           backend: support::shade::Backend,
+           window_targets: support::WindowTargets<B::Resources>) -> Self
+    {
+        use gfx::traits::DeviceExt;
+        //use gfx_corell::factory::Factory;
 
-    // texture atlas
-    let texture = textures::load_textures(&display);
-    // textured sprite shader
-    let program = shaders::get_sprite_shader(&display);
-    // selection shader
-    let program_selection = shaders::get_selection_shader(&display);
+        let vs = support::shade::Source {
+            glsl_330: include_bytes!("shader/instancing_120.glslv"),
+            .. support::shade::Source::empty()
+        };
+        let fs = support::shade::Source {
+            glsl_330: include_bytes!("shader/instancing_120.glslf"),
+            .. support::shade::Source::empty()
+        };
 
-    let params = glium::DrawParameters {
-        blend: glium::Blend::alpha_blending(),
-        .. Default::default()
-    };
-    let mut zoom = 1.0;
-    let (viewport_w, viewport_h) = (w as f32, h as f32);
-    let mut start_ns = clock_ticks::precise_time_ns();
-    let mut prev_ns = start_ns;
-    let mut frames = 0;
+        let mut tiles = tiles::Tiles::new_layer_from_heightmap("heightmap_64.png", 2);
+        let mut miners = miners::Miners::new(10, &tiles);
+        let miners_count: usize = miners.miners.len();
+        let sprites_count: usize = tiles.tiles.len();
+        let instance_count = sprites_count + miners_count;
+        println!("Number of sprites: {}", instance_count);
 
-    let mut running = true;
-    let mut events = sdl_context.event_pump().unwrap();
-    let mut prev_buttons = HashSet::new();
-    let mut selection = selection::Selection::new();
-    let mut cur_tile: Option<usize> = None;
+        let zoom = 1.0;
+        let (viewport_w, viewport_h) = (800.0, 600.0);
+        let ortho_matrix: cgmath::Matrix4<f32> = cgmath::ortho(
+            - viewport_w / 2.0 * zoom, viewport_w / 2.0 * zoom,
+            - viewport_h / 2.0 * zoom, viewport_h / 2.0 * zoom,
+            -1.0, 1.0);
+        let (quad_vertices, mut slice) = device
+            .create_vertex_buffer_with_slice(&SPRITE_VERTICES, &SPRITE_INDICES[..]);
+        let instances = device
+            .create_buffer(instance_count,
+                           gfx::buffer::Role::Vertex,
+                           gfx::memory::Usage::Data,
+                           gfx::TRANSFER_DST).unwrap();
+        App {
+            running: true,
+            zoom: zoom,
+            viewport_w: viewport_w,
+            viewport_h: viewport_h,
+            miners: miners,
+            tiles: tiles,
+            instance_count: instance_count,
+            slice: slice,
+            data: pipe::Data {
+                vertex: quad_vertices,
+                instance: instances,
+                scale: 1.0,
+                matrix: Into::<[[f32; 4]; 4]>::into(ortho_matrix),
+                // texture atlas
+                tex: (textures::load_textures(device), device.create_sampler_linear()),
+                out: window_targets.views[0].0.clone(),
+            },
+            pso: device.create_pipeline_simple(
+                vs.select(backend).unwrap(),
+                fs.select(backend).unwrap(),
+                pipe::new()
+                ).unwrap(),
+            //upload: upload,
+            views: window_targets.views,
+            prev_buttons: HashSet::new(),
+            selection: selection::Selection::new(),
+            cur_tile: None,
+        }
+    }
 
-    while running {
-        let now_ns = clock_ticks::precise_time_ns();
-        let tick_ns = now_ns - prev_ns;
-        let tick_s = (tick_ns as f64) / 1_000_000_000f64;
+    fn render(&mut self, device: &mut B::Device, (frame, sync): (gfx::Frame, &support::SyncPrimitives<B::Resources>),
+              pool: &mut gfx::GraphicsCommandPool<B>, queue: &mut gfx::queue::GraphicsQueue<B>)
+    {
+        use gfx::traits::DeviceExt;
+
+        let upload = device.create_upload_buffer(self.instance_count).unwrap();
+        {
+            let mut writer = device.write_mapping(&upload).unwrap();
+            fill_instances(&mut writer, 0, &self.tiles.get_tiles());
+            fill_instances(&mut writer, self.tiles.tiles.len(), &self.miners.get_tiles());
+        };
+
+        self.slice.instances = Some((self.instance_count as u32, 0));
+        let ortho_matrix: cgmath::Matrix4<f32> = cgmath::ortho(
+            - self.viewport_w / 2.0 * self.zoom, self.viewport_w / 2.0 * self.zoom,
+            - self.viewport_h / 2.0 * self.zoom, self.viewport_h / 2.0 * self.zoom,
+            -1.0, 1.0);
+        let instances = device
+            .create_buffer(self.instance_count,
+                           gfx::buffer::Role::Vertex,
+                           gfx::memory::Usage::Data,
+                           gfx::TRANSFER_DST).unwrap();
+        self.data.instance = instances;
+        self.data.matrix = Into::<[[f32; 4]; 4]>::into(ortho_matrix);
+
+        let mut encoder = pool.acquire_graphics_encoder();
+        encoder.copy_buffer(&upload, &self.data.instance,
+                            0, 0, upload.len()).unwrap();
+
+
+        let (cur_color, _) = self.views[frame.id()].clone();
+        self.data.out = cur_color;
+        encoder.clear(&self.data.out, [0.1, 0.2, 0.3, 1.0]);
+        encoder.draw(&self.slice, &self.pso, &self.data);
+        encoder.synced_flush(queue, &[&sync.rendering], &[], Some(&sync.frame_fence))
+               .expect("Could not flush encoder");
+    }
+
+    fn on_resize(&mut self, window_targets: support::WindowTargets<B::Resources>) {
+        self.views = window_targets.views;
+    }
+
+    fn update(&mut self, tick: f32, events: &mut sdl2::EventPump) {
         // get a mouse state
         let state = events.mouse_state();
 
@@ -133,97 +205,59 @@ fn main() {
         let buttons = state.pressed_mouse_buttons().collect();
 
         // Get the difference between the new and old sets.
-        let new_buttons = &buttons - &prev_buttons;
-        let old_buttons = &prev_buttons - &buttons;
+        let new_buttons = &buttons - &self.prev_buttons;
+        let old_buttons = &self.prev_buttons - &buttons;
 
-        let x = state.x() as f32 - viewport_w / 2.0;
-        let y = viewport_h / 2.0 - state.y() as f32;
+        let x = state.x() as f32 - self.viewport_w / 2.0;
+        let y = self.viewport_h / 2.0 - state.y() as f32;
 
         // right mouse click
         let right = &sdl2::mouse::MouseButton::Right;
         if new_buttons.contains(right) {
             println!("Mouse coord: {:?}, {:?}", x, y);
-            let picked_tile_id = tiles.tree.find(&cgmath::Vector2::new(x * zoom, y * zoom));
-            if cur_tile.is_some() {
-                tiles.tiles[cur_tile.unwrap()].is_selected = false;
+            let picked_tile_id = self.tiles.tree.find(&cgmath::Vector2::new(x * self.zoom, y * self.zoom));
+            if self.cur_tile.is_some() {
+                self.tiles.tiles[self.cur_tile.unwrap()].is_selected = false;
             }
             if picked_tile_id.is_some() {
                 let sel_id = picked_tile_id.unwrap();
-                tiles.tiles[sel_id].is_selected = true;
-                println!("Sprite coords: {:?}", tiles.tiles[sel_id].position);
-                cur_tile = Some(sel_id);
+                self.tiles.tiles[sel_id].is_selected = true;
+                println!("Sprite coords: {:?}", self.tiles.tiles[sel_id].position);
+                self.cur_tile = Some(sel_id);
             }
             println!("Clicked at tile: {:?}", picked_tile_id);
         }
-        selection.update(x, y, &new_buttons, &old_buttons, &buttons);
-        miners.update(tick_s as f32, &tiles);
+        self.selection.update(x, y, &new_buttons, &old_buttons, &buttons);
+        self.miners.update(tick as f32, &self.tiles);
 
-        if selection.pressed {
-            tiles.update_selected(&selection);
+        if self.selection.pressed {
+            self.tiles.update_selected(&self.selection);
         }
 
-        // construct uniforms, take current zoom into account
-        // left, right, bottom, top, near, far
-        //glOrtho( -width/2*zoom, width/2*zoom, -height/2*zoom, height/2*zoom, -1, 1 );
-        let ortho_matrix: cgmath::Matrix4<f32> = cgmath::ortho(
-            - viewport_w / 2.0 * zoom, viewport_w / 2.0 * zoom,
-            - viewport_h / 2.0 * zoom, viewport_h / 2.0 * zoom,
-            -1.0, 1.0);
-        let uniforms = uniform! {
-            tex: &texture,
-            matrix: Into::<[[f32; 4]; 4]>::into(ortho_matrix)
-        };
-        // building the vertex buffer and index buffers that will be filled with the data of
-        // the sprites
-        let (vertex_buffer, index_buffer) = generate_vertices(&display, &tiles.get_tiles());
-        let (vertex_buffer_m, index_buffer_m) = generate_vertices(&display, &miners.get_tiles());
-        // we must only draw the number of sprites that we have written in the vertex buffer
-        // if you only want to draw 20 sprites for example, you should pass `0 .. 20 * 6` instead
-        let ib_slice = index_buffer.slice(0 .. sprites_count * 6).unwrap();
-        let ib_slice_m = index_buffer_m.slice(0 .. miners_count * 6).unwrap();
-
-        // drawing a frame
-        let mut target = display.draw();
-        target.clear_color_and_depth((0.0, 0.0, 0.0, 0.0), 1.0);
-        target.draw(&vertex_buffer, &ib_slice, &program, &uniforms, &params).unwrap();
-        target.draw(&vertex_buffer_m, &ib_slice_m, &program, &uniforms, &params).unwrap();
-
-        // Event loop: polls for events sent to all windows
+        // handle events
         for event in events.poll_iter() {
             match event {
-                Event::KeyDown { keycode: Some(Keycode::Escape), .. } |
-                    Event::Quit { .. } => {
-                        running = false;
-                    },
+                Event::Quit { .. } |
+                Event::KeyUp { keycode: Some(Keycode::Escape), .. } => {
+                    self.running = false;
+                },
                 Event::KeyDown { keycode: Some(Keycode::Equals), .. } => {
-                    zoom -= 0.5;
+                    self.zoom -= 0.5;
                 },
                 Event::KeyDown { keycode: Some(Keycode::Minus), .. } => {
-                    zoom += 0.5;
+                    self.zoom += 0.5;
                 },
-                _ => ()
+                _ => {}
             }
         }
-
-        if selection.pressed {  // draw current selection, if active
-            let (vertex_buffer, index_buffer) = selection.generate_vertices(&display);
-            target.draw(&vertex_buffer, &index_buffer, &program_selection, &uniforms, &params).unwrap();
-        }
-
-        target.finish().unwrap();
-
-        prev_buttons = buttons;
-
-        // calculate FPS
-        frames += 1;
-        let duration_ns = clock_ticks::precise_time_ns() - start_ns;
-        let duration_s = (duration_ns as f64) / 1_000_000_000f64;
-        let fps = (frames as f64) / duration_s;
-        if duration_s > 1.0 {
-            start_ns = clock_ticks::precise_time_ns();
-            frames = 0;
-            println!("Duration: {}, count: {}", duration_s, fps);
-        }
-        prev_ns = now_ns;
     }
+
+    fn is_running(&self) -> bool {
+        self.running
+    }
+}
+
+pub fn main() {
+    use support::Application;
+    App::launch_simple(800, 600);
 }
