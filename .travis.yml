@@ -1,3 +1,6 @@
 language: rust
 rust:
   - 1.22.1
+before_install:
+  - sudo apt-get -qq update
+  - sudo apt-get install -y libsdl2-2.0 libsdl-ttf2.0-dev libsdl-ttf2.0 libsdl2-dev
