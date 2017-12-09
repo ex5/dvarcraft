@@ -8,16 +8,19 @@ name = "dvarcraft"
 path = "src/dvarcraft.rs"
 
 [dependencies]
-lazy_static = "0.2"
-smallvec = "0.4.2"
-fnv = "1.0.5"
-genmesh = "*"
-obj = "*"
-rand = "*"
+cgmath = "0.15"
 clock_ticks = "*"
-image = "*"
+env_logger = "0.4"
 find_folder = "*"
-cgmath = "*"
-sdl2 = "0.27"
-glium = "0.15"
-glium_sdl2 = { git="https://github.com/cristicbz/glium-sdl2", ref="0c18cd01efc965c4f91059b796058929695c95c9" }
+gfx = { git="https://github.com/gfx-rs/gfx.git" }
+gfx_core = { git="https://github.com/gfx-rs/gfx.git" }
+gfx_device_gl = { git="https://github.com/gfx-rs/gfx.git" }
+gfx_window_sdl = { git="https://github.com/gfx-rs/gfx.git" }
+image = "*"
+log = "0.3"
+rand = "*"
+
+[dependencies.sdl2]
+version = "0.30"
+default-features = false
+features = ["ttf", "gfx"]
