@@ -11,7 +11,6 @@ use gfx_device_gl;
 use gfx_window_sdl;
 use sdl2;
 use sdl2::pixels::Color;
-use std;
 
 
 pub mod shade;
@@ -173,17 +172,15 @@ pub trait Application<B: Backend>: Sized {
 
         let ttf_context = sdl2::ttf::init().unwrap();
         // Load a font
-        let mut font = ttf_context.load_font("assets/FiraSans-Regular.ttf", 128).unwrap();
+        let font = ttf_context.load_font("assets/FiraSans-Regular.ttf", 128).unwrap();
 
-        // Request opengl core 3.3:
         video.gl_attr().set_context_profile(sdl2::video::GLProfile::Core);
+        // Request opengl core 3.3
         video.gl_attr().set_context_version(3, 3);
         let builder = video.window("SDL Window", w, h);
         let (window, _gl_context) = gfx_window_sdl::build(builder, Rgba8::get_format(), DepthStencil::get_format()).unwrap();
         let mut window = gfx_window_sdl::Window::new(window);
-        let (mut surface, adapters) = window.get_surface_and_adapters();
-        //let mut canvas = window.raw().into_canvas();
-        //println!("{:?}", text_surface.without_lock());
+        let (surface, adapters) = window.get_surface_and_adapters();
 
         let dim = (w, h);
         run::<Self, _, _>(dim, surface, adapters, sdl_context, font)

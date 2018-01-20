@@ -67,8 +67,6 @@ fn fill_instances(instances: &mut [Instance], start_idx: usize, tiles: &Vec<&til
     }
  }
 
-const MAX_INSTANCE_COUNT: usize = 2048;
-
 pub struct App<B: gfx::Backend> {
     running: bool,
     zoom: f32,
@@ -77,15 +75,15 @@ pub struct App<B: gfx::Backend> {
     views: Vec<BackbufferView<B::Resources>>,
     pso: gfx::PipelineState<B::Resources, pipe::Meta>,
     data: pipe::Data<B::Resources>,
+    data_ui: pipe::Data<B::Resources>,
     slice: gfx::Slice<B::Resources>,
+    slice_ui: gfx::Slice<B::Resources>,
     tiles: tiles::Tiles,
     miners: miners::Miners,
     instance_count: usize,
-    //upload: gfx::handle::Buffer<B::Resources, Instance>,
     prev_buttons: HashSet<sdl2::mouse::MouseButton>,
     selection: selection::Selection,
     cur_tile: Option<usize>,
-    matrix_ui: [[f32; 4]; 4],
 }
 
 impl<B: gfx::Backend> support::Application<B> for App<B> {
@@ -119,10 +117,18 @@ impl<B: gfx::Backend> support::Application<B> for App<B> {
             - viewport_w / 2.0 * zoom, viewport_w / 2.0 * zoom,
             - viewport_h / 2.0 * zoom, viewport_h / 2.0 * zoom,
             -1.0, 1.0);
-        let (quad_vertices, mut slice) = device
+        let (quad_vertices, slice) = device
             .create_vertex_buffer_with_slice(&SPRITE_VERTICES, &SPRITE_INDICES[..]);
         let instances = device
             .create_buffer(instance_count,
+                           gfx::buffer::Role::Vertex,
+                           gfx::memory::Usage::Data,
+                           gfx::TRANSFER_DST).unwrap();
+
+        let (quad_vertices_ui, slice_ui) = device
+            .create_vertex_buffer_with_slice(&SPRITE_VERTICES, &SPRITE_INDICES[..]);
+        let instances_ui = device
+            .create_buffer(1,
                            gfx::buffer::Role::Vertex,
                            gfx::memory::Usage::Data,
                            gfx::TRANSFER_DST).unwrap();
@@ -135,6 +141,7 @@ impl<B: gfx::Backend> support::Application<B> for App<B> {
             tiles: tiles,
             instance_count: instance_count,
             slice: slice,
+            slice_ui: slice_ui,
             data: pipe::Data {
                 vertex: quad_vertices,
                 instance: instances,
@@ -144,17 +151,23 @@ impl<B: gfx::Backend> support::Application<B> for App<B> {
                 tex: (textures::load_textures(device), device.create_sampler_linear()),
                 out: window_targets.views[0].0.clone(),
             },
+            data_ui: pipe::Data {
+                vertex: quad_vertices_ui,
+                instance: instances_ui,
+                scale: 1.0,
+                matrix: Into::<[[f32; 4]; 4]>::into(cgmath::ortho(
+                    - viewport_w / 2.0 * zoom, viewport_w / 2.0 * zoom,
+                    viewport_h / 2.0 * zoom, - viewport_h / 2.0 * zoom,
+                    - 1.0, 1.0
+                )),
+                tex: (textures::load_textures(device), device.create_sampler_linear()),
+                out: window_targets.views[0].0.clone(),
+            },
             pso: device.create_pipeline_simple(
                 vs.select(backend).unwrap(),
                 fs.select(backend).unwrap(),
                 pipe::new()
                 ).unwrap(),
-            matrix_ui: Into::<[[f32; 4]; 4]>::into(cgmath::ortho(
-            - viewport_w / 2.0 * zoom, viewport_w / 2.0 * zoom,
-            viewport_h / 2.0 * zoom, - viewport_h / 2.0 * zoom,
-            - 1.0, 1.0)
-            ),
-            //upload: upload,
             views: window_targets.views,
             prev_buttons: HashSet::new(),
             selection: selection::Selection::new(),
@@ -178,54 +191,40 @@ impl<B: gfx::Backend> support::Application<B> for App<B> {
         };
 
         self.slice.instances = Some((self.instance_count as u32, 0));
-        let ortho_matrix: cgmath::Matrix4<f32> = cgmath::ortho(
-            - self.viewport_w / 2.0 * self.zoom, self.viewport_w / 2.0 * self.zoom,
-            - self.viewport_h / 2.0 * self.zoom, self.viewport_h / 2.0 * self.zoom,
-            -1.0, 1.0);
-        let instances = device
+        self.data.instance = device
             .create_buffer(self.instance_count,
                            gfx::buffer::Role::Vertex,
                            gfx::memory::Usage::Data,
                            gfx::TRANSFER_DST).unwrap();
-        self.data.instance = instances;
-        self.data.matrix = Into::<[[f32; 4]; 4]>::into(ortho_matrix);
+        self.data.matrix = Into::<[[f32; 4]; 4]>::into(cgmath::ortho(
+            - self.viewport_w / 2.0 * self.zoom, self.viewport_w / 2.0 * self.zoom,
+            - self.viewport_h / 2.0 * self.zoom, self.viewport_h / 2.0 * self.zoom,
+            -1.0, 1.0));
 
         let mut encoder = pool.acquire_graphics_encoder();
         encoder.copy_buffer(&upload, &self.data.instance,
                             0, 0, upload.len()).unwrap();
-
-
-        let (cur_color, _) = self.views[frame.id()].clone();
-        self.data.out = cur_color;
+        self.data.out = self.views[frame.id()].clone().0;
         encoder.clear(&self.data.out, [0.1, 0.2, 0.3, 1.0]);
         encoder.draw(&self.slice, &self.pso, &self.data);
 
-        // create pipeline data for the text texture
-        let (text_quad_vertices, mut text_slice) = device
-            .create_vertex_buffer_with_slice(&SPRITE_VERTICES, &SPRITE_INDICES[..]);
-        let text_instances = device
-            .create_buffer(1,
-                           gfx::buffer::Role::Vertex,
-                           gfx::memory::Usage::Data,
-                           gfx::TRANSFER_DST).unwrap();
-
+        // update UI pipeline data
         let text_upload = device.create_upload_buffer(1).unwrap();
         {
             let mut writer = device.write_mapping(&text_upload).unwrap();
             fill_instances(&mut writer, 0, &vec![self.tiles.get_tiles()[1500]]);
         };
-        let text_data = pipe::Data {
-            vertex: text_quad_vertices,
-            instance: text_instances,
-            scale: 1.0,
-            matrix: self.matrix_ui,
-            tex: (textures::texture_from_text(device, text_surface), device.create_sampler_linear()),
-            out: self.views[frame.id()].clone().0,
-        };
-        encoder.copy_buffer(&text_upload, &text_data.instance,
+        self.data_ui.instance = device
+            .create_buffer(1,
+                           gfx::buffer::Role::Vertex,
+                           gfx::memory::Usage::Data,
+                           gfx::TRANSFER_DST).unwrap();
+        self.data_ui.tex = (textures::texture_from_text(device, text_surface), device.create_sampler_linear());
+        self.data_ui.out = self.views[frame.id()].clone().0;
+        encoder.copy_buffer(&text_upload, &self.data_ui.instance,
                             0, 0, text_upload.len()).unwrap();
-        // make a separate draw call for the text pipeline data
-        encoder.draw(&text_slice, &self.pso, &text_data);
+        // make a separate draw call for the UI pipeline data
+        encoder.draw(&self.slice_ui, &self.pso, &self.data_ui);
 
         encoder.synced_flush(queue, &[&sync.rendering], &[], Some(&sync.frame_fence))
                .expect("Could not flush encoder");

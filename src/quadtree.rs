@@ -76,7 +76,7 @@ impl QuadTree {
                 }
             ];
         }
-        for mut branch in self.branches.iter_mut() {
+        for branch in self.branches.iter_mut() {
             branch.split();
         };
     }
