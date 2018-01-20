@@ -10,8 +10,9 @@ use gfx_core;
 use gfx_device_gl;
 use gfx_window_sdl;
 use sdl2;
-use sdl2::gfx::primitives::DrawRenderer;
+use sdl2::pixels::Color;
 use std;
+
 
 pub mod shade;
 
@@ -39,7 +40,8 @@ pub struct SyncPrimitives<R: gfx::Resources> {
 fn run<A, B, S>((width, height): (u32, u32),
                     mut surface: S,
                     adapters: Vec<B::Adapter>,
-                    sdl_context: sdl2::Sdl)
+                    sdl_context: sdl2::Sdl,
+                    font: sdl2::ttf::Font)
     where A: Sized + Application<B>,
           B: Backend,
           S: gfx_core::Surface<B>,
@@ -59,6 +61,8 @@ fn run<A, B, S>((width, height): (u32, u32),
                     .with_color::<ColorFormat>()
                     .with_depth_stencil::<DepthFormat>();
     let mut swap_chain = surface.build_swapchain(config, &queue);
+
+
 
     let views =
         swap_chain
@@ -106,6 +110,7 @@ fn run<A, B, S>((width, height): (u32, u32),
     let mut frames = 0;
     let mut start_ns = clock_ticks::precise_time_ns();
     let mut prev_ns = start_ns;
+    let mut fps = 0.0;
 
     while app.is_running() {
         let now_ns = clock_ticks::precise_time_ns();
@@ -116,7 +121,10 @@ fn run<A, B, S>((width, height): (u32, u32),
 
         graphics_pool.reset();
         let frame = swap_chain.acquire_frame(FrameSync::Semaphore(&sync.acquisition));
-        app.render(&mut device, (frame, &sync), &mut graphics_pool, &mut queue);
+        // render some text into an SDL surface
+        let text_surface = font.render(&format!("FPS {:.1}", fps))
+            .blended(Color::RGBA(200, 200, 200, 255)).unwrap();
+        app.render(&mut device, (frame, &sync), &mut graphics_pool, &mut queue, text_surface);
         swap_chain.present(&mut queue, &[]);
 
         device.wait_for_fences(&[&sync.frame_fence], gfx::WaitFor::All, 1_000_000);
@@ -126,7 +134,7 @@ fn run<A, B, S>((width, height): (u32, u32),
         frames += 1;
         let duration_ns = clock_ticks::precise_time_ns() - start_ns;
         let duration_s = (duration_ns as f64) / 1_000_000_000f64;
-        let fps = (frames as f64) / duration_s;
+        fps = (frames as f64) / duration_s;
         if duration_s > 1.0 {
             start_ns = clock_ticks::precise_time_ns();
             frames = 0;
@@ -144,7 +152,7 @@ pub trait Application<B: Backend>: Sized {
            shade::Backend, WindowTargets<B::Resources>) -> Self;
     fn update(&mut self, tick: f32, events: &mut sdl2::EventPump);
     fn render(&mut self, device: &mut B::Device, frame: (gfx_core::Frame, &SyncPrimitives<B::Resources>),
-                     pool: &mut GraphicsCommandPool<B>, queue: &mut GraphicsQueue<B>);
+                     pool: &mut GraphicsCommandPool<B>, queue: &mut GraphicsQueue<B>, text_surface: sdl2::surface::Surface);
 
     fn on_resize(&mut self, WindowTargets<B::Resources>) {}
     fn on_resize_ext(&mut self, _device: &mut B::Device, targets: WindowTargets<B::Resources>) {
@@ -162,6 +170,11 @@ pub trait Application<B: Backend>: Sized {
 
         let sdl_context = sdl2::init().unwrap();
         let video = sdl_context.video().unwrap();
+
+        let ttf_context = sdl2::ttf::init().unwrap();
+        // Load a font
+        let mut font = ttf_context.load_font("assets/FiraSans-Regular.ttf", 128).unwrap();
+
         // Request opengl core 3.3:
         video.gl_attr().set_context_profile(sdl2::video::GLProfile::Core);
         video.gl_attr().set_context_version(3, 3);
@@ -170,8 +183,9 @@ pub trait Application<B: Backend>: Sized {
         let mut window = gfx_window_sdl::Window::new(window);
         let (mut surface, adapters) = window.get_surface_and_adapters();
         //let mut canvas = window.raw().into_canvas();
+        //println!("{:?}", text_surface.without_lock());
 
         let dim = (w, h);
-        run::<Self, _, _>(dim, surface, adapters, sdl_context)
+        run::<Self, _, _>(dim, surface, adapters, sdl_context, font)
     }
 }
