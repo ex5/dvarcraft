@@ -2,12 +2,22 @@ use find_folder;
 use image;
 use rand;
 use rand::Rng;
+use rand::distributions::{Weighted, WeightedChoice, IndependentSample};
 use image::Pixel;
 use cgmath::{ InnerSpace, Vector2 };
 
 use selection;
 use std::iter::Iterator;
 use quadtree::QuadTree;
+
+fn get_ground_tile_id() -> u32{
+    let mut items = vec!(Weighted { weight: 20, item: 2 as u32 },
+                         Weighted { weight: 3, item: 3 as u32 });
+    let wc = WeightedChoice::new(&mut items);
+    let mut rng = rand::thread_rng();
+
+    wc.ind_sample(&mut rng)
+}
 
 #[derive(Debug)]
 pub struct Tile {
@@ -80,9 +90,11 @@ impl Tiles {
         for x in 0..size_x {
             for y in 0..size_y {
                 let pixel = heightmap.get_pixel(x,  y).to_rgb().data;
-                let mut tex_id = rand::thread_rng().gen_range(2, 4); // grass, clay or stone
+                let mut tex_id: u32 = get_ground_tile_id(); // grass or clay
                 if pixel[0] < (layer_idx * layer_step) {
                     tex_id = 1; // water
+                } else if pixel[0] > (layer_idx * layer_step * 2) {
+                    tex_id = 4; // stone
                 }
 
                 tiles.push(
@@ -94,7 +106,7 @@ impl Tiles {
 
                 let last_id = tiles.len() - 1;
 
-                if tex_id != 1 {
+                if tex_id != 1 && tex_id != 4 {
                     // store walkable index
                     walkable.push(last_id);
                 }
