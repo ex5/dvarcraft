@@ -12,17 +12,23 @@ pub fn load_textures<R, D>(device: &mut D) -> gfx::handle::ShaderResourceView<R,
         .for_folder("assets").unwrap();
 
     // store all textures in a `Texture2dArray`
-    let tex_files = vec!["grass.png", "water.png", "miner.png"];
+    let tex_files = vec![
+        "miner.png",
+        "water.png",
+        "grass.png", "clay.png", "stone.png"];
 
     let texture = {
         let images = tex_files.iter().map(|x| {
             image::open(assets.join(x)).unwrap().rotate180().to_rgba()
         }).collect::<Vec<_>>();
 
-        let data: [&[u8]; 3] = [&images[0], &images[1], &images[2]];
+        let data: [&[u8]; 5] = [
+            &images[0],
+            &images[1],
+            &images[2], &images[3], &images[4]];
 
         device.create_texture_immutable_u8::<ColorFormat>(
-            gfx::texture::Kind::D2Array(64, 64, 3, gfx::texture::AaMode::Single),
+            gfx::texture::Kind::D2Array(64, 64, 5, gfx::texture::AaMode::Single),
             &data
             ).unwrap().1
     };

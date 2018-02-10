@@ -80,7 +80,7 @@ impl Tiles {
         for x in 0..size_x {
             for y in 0..size_y {
                 let pixel = heightmap.get_pixel(x,  y).to_rgb().data;
-                let mut tex_id = 0; // grass
+                let mut tex_id = rand::thread_rng().gen_range(2, 4); // grass, clay or stone
                 if pixel[0] < (layer_idx * layer_step) {
                     tex_id = 1; // water
                 }
@@ -94,7 +94,7 @@ impl Tiles {
 
                 let last_id = tiles.len() - 1;
 
-                if tex_id == 0 {
+                if tex_id != 1 {
                     // store walkable index
                     walkable.push(last_id);
                 }
