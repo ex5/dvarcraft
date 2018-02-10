@@ -8,6 +8,7 @@ use cgmath::{ InnerSpace, Vector2 };
 
 use selection;
 use std::iter::Iterator;
+use std::collections::HashSet;
 use quadtree::QuadTree;
 
 fn get_ground_tile_id() -> u32{
@@ -42,6 +43,7 @@ impl Tile {
 pub struct Tiles {
     pub tiles: Vec<Tile>,
     pub walkable: Vec<usize>,
+    pub walkable_set: HashSet<usize>,
     pub width: usize,
     pub height: usize,
     pub tree: QuadTree,
@@ -69,6 +71,7 @@ impl Tiles {
 
         let mut tiles = Vec::new();
         let mut walkable = Vec::new();
+        let mut walkable_set = HashSet::new();
 
         let sprite_size = 64.0;
         let (step_x, step_y) = (sprite_size / 2.0, 17.0);
@@ -81,6 +84,7 @@ impl Tiles {
             min_width: sprite_size,
             branches: vec![],
             tiles: vec![],
+            tiles_set: HashSet::new(),
             x: - region_width / 2.0,
             y: - region_height / 2.0,
             width: region_width,
@@ -97,6 +101,7 @@ impl Tiles {
                     tex_id = 4; // stone
                 }
 
+                let last_id = tiles.len();
                 tiles.push(
                     Tile::new(Vector2::new(
                         x_start - step_x * x as f32 + step_x * y as f32,
@@ -104,11 +109,10 @@ impl Tiles {
                     ), tex_id)
                 );
 
-                let last_id = tiles.len() - 1;
-
                 if tex_id != 1 && tex_id != 4 {
                     // store walkable index
                     walkable.push(last_id);
+                    walkable_set.insert(last_id);
                 }
                 tree.insert(&tiles[last_id].position, last_id);
             }
@@ -117,6 +121,7 @@ impl Tiles {
         Tiles {
             tiles: tiles,
             walkable: walkable,
+            walkable_set: walkable_set,
             width: size_x as usize,
             height: size_y as usize,
             tree: tree,
@@ -143,6 +148,15 @@ impl Tiles {
             |_| rng.choose(&self.walkable).unwrap()
         )
         .map(|&i| &self.tiles[i]).collect::<Vec<_>>()
+    }
+
+    pub fn get_closest_walkable(&self, pos: Vector2<f32>) -> Option<&Tile> {
+        let tile_id = self.tree.find_around_in(&pos, &self.walkable_set);
+        if tile_id.is_some() {
+            Some(&self.tiles[tile_id.unwrap()])
+        } else {
+            None
+        }
     }
 
     pub fn get_closest_random(&self, pos: Vector2<f32>) -> Option<&Tile> {

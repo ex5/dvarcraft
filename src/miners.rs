@@ -62,10 +62,15 @@ impl Miners {
                 State::Idle => {
                     if miner.waypoints.len() < 1 {
                         if rand::random::<f32>() < 0.2 {
-                            miner.waypoints.push(tiles.get_closest_random(miner.tile.position).unwrap().position);
-                            println!("New waypoint: from {:?} to {:?}",
-                                     miner.tile.position, miner.waypoints[miner.waypoints.len() - 1]);
-                            MovementState::Moving
+                            let next_waypoint = tiles.get_closest_walkable(miner.tile.position);
+                            if next_waypoint.is_some() {
+                                miner.waypoints.push(next_waypoint.unwrap().position);
+                                println!("New waypoint: from {:?} to {:?}",
+                                         miner.tile.position, miner.waypoints[miner.waypoints.len() - 1]);
+                                MovementState::Moving
+                            } else {
+                                MovementState::Idle
+                            }
                         } else {
                             MovementState::Idle
                         }
