@@ -220,7 +220,8 @@ impl<B: gfx::Backend> support::Application<B> for App<B> {
         let text_upload = device.create_upload_buffer(1).unwrap();
         {
             let mut writer = device.write_mapping(&text_upload).unwrap();
-            fill_instances(&mut writer, 0, &vec![self.tiles.get_tiles()[1500]]);
+            fill_instances(&mut writer, 0, &vec![
+                &tiles::Tile { position: cgmath::Vector2::new(160.0, 221.0), tex_id: 4, is_selected: false }]);
         };
         self.data_ui.instance = device
             .create_buffer(1,
