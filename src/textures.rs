@@ -2,6 +2,7 @@ use find_folder;
 use image;
 use gfx;
 use sdl2;
+const SPRITE_COUNT: usize = 7;
 
 use support::ColorFormat;
 
@@ -15,20 +16,22 @@ pub fn load_textures<R, D>(device: &mut D) -> gfx::handle::ShaderResourceView<R,
     let tex_files = vec![
         "miner.png",
         "water.png",
-        "grass.png", "clay.png", "stone.png"];
+        "grass.png", "clay.png", "stone.png",
+        "tree.png", "wood.png"];
 
     let texture = {
         let images = tex_files.iter().map(|x| {
             image::open(assets.join(x)).unwrap().rotate180().to_rgba()
         }).collect::<Vec<_>>();
 
-        let data: [&[u8]; 5] = [
+        let data: [&[u8]; SPRITE_COUNT] = [
             &images[0],
             &images[1],
-            &images[2], &images[3], &images[4]];
+            &images[2], &images[3], &images[4],
+            &images[5], &images[6]];
 
         device.create_texture_immutable_u8::<ColorFormat>(
-            gfx::texture::Kind::D2Array(64, 64, 5, gfx::texture::AaMode::Single),
+            gfx::texture::Kind::D2Array(64, 64, SPRITE_COUNT as u16, gfx::texture::AaMode::Single),
             &data
             ).unwrap().1
     };

@@ -35,6 +35,14 @@ const SPRITE_VERTICES: [Vertex; 4] = [
 
 const SPRITE_INDICES: [u16; 6] = [0, 1, 2, 1, 3, 2];
 
+const SPRITE_MINER: u32 = 0;
+const SPRITE_WATER: u32 = 1;
+const SPRITE_GRASS: u32 = 2;
+const SPRITE_CLAY: u32 = 3;
+const SPRITE_STONE: u32 = 4;
+const SPRITE_TREE: u32 = 5;
+const SPRITE_WOOD: u32 = 6;
+
 gfx_defines!{
     vertex Vertex {
         position: [f32; 2] = "i_position",

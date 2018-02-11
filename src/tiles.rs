@@ -11,13 +11,25 @@ use std::iter::Iterator;
 use std::collections::HashSet;
 use quadtree::QuadTree;
 
-fn get_ground_tile_id() -> u32{
-    let mut items = vec!(Weighted { weight: 20, item: 2 as u32 },
-                         Weighted { weight: 3, item: 3 as u32 });
+fn get_ground_tile_id() -> u32 {
+    let mut items = vec!(Weighted { weight: 20, item: ::SPRITE_GRASS },
+                         Weighted { weight: 3, item: ::SPRITE_CLAY });
     let wc = WeightedChoice::new(&mut items);
     let mut rng = rand::thread_rng();
 
     wc.ind_sample(&mut rng)
+}
+
+fn get_resource_tile_id() -> Option<u32> {
+    let mut items = vec!(Weighted { weight: 20, item: -1 }, // nothing
+                         Weighted { weight: 1, item: ::SPRITE_TREE as i32 });
+    let wc = WeightedChoice::new(&mut items);
+    let mut rng = rand::thread_rng();
+    let maybe_id = wc.ind_sample(&mut rng);
+    if maybe_id != -1 {
+        return Some(maybe_id as u32);
+    }
+    None
 }
 
 #[derive(Debug)]
@@ -94,11 +106,11 @@ impl Tiles {
         for x in 0..size_x {
             for y in 0..size_y {
                 let pixel = heightmap.get_pixel(x,  y).to_rgb().data;
-                let mut tex_id: u32 = get_ground_tile_id(); // grass or clay
+                let mut tex_id = get_ground_tile_id(); // grass or clay
                 if pixel[0] < (layer_idx * layer_step) {
-                    tex_id = 1; // water
+                    tex_id = ::SPRITE_WATER;
                 } else if pixel[0] > (layer_idx * layer_step * 2) {
-                    tex_id = 4; // stone
+                    tex_id = ::SPRITE_STONE;
                 }
 
                 let last_id = tiles.len();
@@ -108,13 +120,25 @@ impl Tiles {
                         y_start - step_y * x as f32 - step_y * y as f32,
                     ), tex_id)
                 );
+                tree.insert(&tiles[last_id].position, last_id);
 
-                if tex_id != 1 && tex_id != 4 {
+                if tex_id != ::SPRITE_STONE && tex_id != ::SPRITE_WATER {
                     // store walkable index
                     walkable.push(last_id);
                     walkable_set.insert(last_id);
+
+                    // roll a resource tile
+                    let resource_tile_id = get_resource_tile_id();
+                    if resource_tile_id.is_some() {
+                        tiles.push(
+                            Tile::new(Vector2::new(
+                                x_start - step_x * x as f32 + step_x * y as f32,
+                                y_start - step_y * x as f32 - step_y * y as f32,
+                            ), resource_tile_id.unwrap())
+                        );
+                        tree.insert(&tiles[last_id + 1].position, last_id + 1);
+                    }
                 }
-                tree.insert(&tiles[last_id].position, last_id);
             }
         }
 
