@@ -3,8 +3,6 @@ extern crate env_logger;
 extern crate rand;
 extern crate sdl2;
 extern crate gfx_core;
-extern crate freetype as ft;
-//extern crate gfx_corell;
 extern crate gfx_device_gl;
 extern crate gfx_window_sdl;
 extern crate cgmath;
@@ -101,7 +99,6 @@ impl<B: gfx::Backend> support::Application<B> for App<B> {
            window_targets: support::WindowTargets<B::Resources>) -> Self
     {
         use gfx::traits::DeviceExt;
-        //use gfx_corell::factory::Factory;
 
         let vs = support::shade::Source {
             glsl_330: include_bytes!("shader/instancing_120.glslv"),
@@ -228,7 +225,7 @@ impl<B: gfx::Backend> support::Application<B> for App<B> {
                            gfx::buffer::Role::Vertex,
                            gfx::memory::Usage::Data,
                            gfx::TRANSFER_DST).unwrap();
-        self.data_ui.tex = (textures::texture_from_text(device, text_surface), device.create_sampler_linear());
+        self.data_ui.tex = (textures::texture_from_surface(device, text_surface), device.create_sampler_linear());
         self.data_ui.out = self.views[frame.id()].clone().0;
         encoder.copy_buffer(&text_upload, &self.data_ui.instance,
                             0, 0, text_upload.len()).unwrap();

@@ -12,7 +12,6 @@ cgmath = "0.15"
 clock_ticks = "*"
 env_logger = "0.4"
 find_folder = "*"
-freetype-rs = { git="https://github.com/PistonDevelopers/freetype-rs.git" }
 gfx = { git="https://github.com/gfx-rs/gfx.git" }
 gfx_core = { git="https://github.com/gfx-rs/gfx.git" }
 gfx_device_gl = { git="https://github.com/gfx-rs/gfx.git" }
