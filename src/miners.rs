@@ -12,6 +12,7 @@ pub enum MovementState {
 #[derive(Copy, Clone, PartialEq)]
 pub enum State {
     Idle,
+    CuttingTree,
 }
 
 pub struct Miner {
@@ -20,6 +21,8 @@ pub struct Miner {
     pub tile: tiles::Tile,
     pub waypoints: Vec<Vector2<f32>>,
     pub speed: f32,
+    pub state_counter: u32,
+    pub working_on: Option<usize>,
 }
 
 pub struct Miners {
@@ -32,11 +35,13 @@ impl Miner {
         tex_id: u32,
     ) -> Miner {
         Miner {
-            tile: tiles::Tile::new(position, tex_id),
+            tile: tiles::Tile::new(position, tex_id, None),
             movement_state: MovementState::Idle,
             state: State::Idle,
             waypoints: Vec::new(),
             speed: 10.0,
+            state_counter: 0,
+            working_on: None,
         }
     }
 }
@@ -56,8 +61,35 @@ impl Miners {
         self.miners.iter().map(|miner| &miner.tile).collect::<Vec<_>>()
     }
 
-    pub fn update(&mut self, duration: f32, tiles: &tiles::Tiles) {
+    pub fn update(&mut self, duration: f32, tiles: &mut tiles::Tiles) {
         for miner in self.miners.iter_mut() {
+            miner.state = match miner.state {
+                State::Idle => {
+                    let closest_tile = tiles.resource_at(miner.tile.position);
+                    if closest_tile.is_some() {
+                        let r = closest_tile.unwrap();
+                        if r.resource_id.map_or(false, |x| x == ::RESOURCE_WOOD) && r.resource_count > 0 && !r.can_be_carried {
+                            miner.state_counter = miner.speed as u32;
+                            miner.working_on = tiles.index_of(&r);
+                            State::CuttingTree
+                        } else {
+                            State::Idle
+                        }
+                    } else {
+                        State::Idle
+                    }
+                },
+                State::CuttingTree => {
+                    if miner.state_counter > 0 {
+                        miner.state_counter -= 1;
+                        State::CuttingTree
+                    } else {
+                        tiles.replace(miner.working_on, ::SPRITE_WOOD, true);
+                        miner.working_on = None;
+                        State::Idle
+                    }
+                }
+            };
             miner.movement_state = match miner.state {
                 State::Idle => {
                     if miner.waypoints.len() < 1 {
@@ -74,12 +106,15 @@ impl Miners {
                         } else {
                             MovementState::Idle
                         }
-                    } else if (miner.tile.position - miner.waypoints[miner.waypoints.len() - 1]).magnitude() < 10.0 {
+                    } else if (miner.tile.position - miner.waypoints[miner.waypoints.len() - 1]).magnitude() < 2.0 {
                         miner.waypoints.pop();
                         MovementState::Idle
                     } else {
                         miner.movement_state
                     }
+                },
+                State::CuttingTree => {
+                    miner.movement_state
                 }
             };
             miner.tile.position = match miner.movement_state {

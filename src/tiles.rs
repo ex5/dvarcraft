@@ -37,16 +37,23 @@ pub struct Tile {
     pub position: Vector2<f32>,
     pub tex_id: u32,
     pub is_selected: bool,
+    pub resource_id: Option<u8>,
+    pub resource_count: u8,
+    pub can_be_carried: bool,
 }
 
 impl Tile {
     pub fn new(
         position: Vector2<f32>,
         tex_id: u32,
+        resource_id: Option<u8>,
     ) -> Tile {
         Tile {
             position: position,
             tex_id: tex_id,
+            resource_id: resource_id,
+            resource_count: resource_id.map_or(0, |v| 5), // TODO roll the count,
+            can_be_carried: false,
             is_selected: false,
         }
     }
@@ -118,7 +125,7 @@ impl Tiles {
                     Tile::new(Vector2::new(
                         x_start - step_x * x as f32 + step_x * y as f32,
                         y_start - step_y * x as f32 - step_y * y as f32,
-                    ), tex_id)
+                    ), tex_id, None)
                 );
                 tree.insert(&tiles[last_id].position, last_id);
 
@@ -130,11 +137,16 @@ impl Tiles {
                     // roll a resource tile
                     let resource_tile_id = get_resource_tile_id();
                     if resource_tile_id.is_some() {
+                        let _resource_tile_id = resource_tile_id.unwrap();
+                        let mut _resource_id: Option<u8> = None;
+                        if _resource_tile_id == ::SPRITE_TREE {
+                            _resource_id = Some(::RESOURCE_WOOD);
+                        }
                         tiles.push(
                             Tile::new(Vector2::new(
                                 x_start - step_x * x as f32 + step_x * y as f32,
                                 y_start - step_y * x as f32 - step_y * y as f32,
-                            ), resource_tile_id.unwrap())
+                            ), _resource_tile_id, _resource_id)
                         );
                         tree.insert(&tiles[last_id + 1].position, last_id + 1);
                     }
@@ -183,29 +195,6 @@ impl Tiles {
         }
     }
 
-    pub fn get_closest_random(&self, pos: Vector2<f32>) -> Option<&Tile> {
-        let w_step = self.width as i32;
-        let nearby_idx = [
-            -1, -2, 1, 2, - w_step , w_step, - w_step + 1, - w_step - 1,
-             w_step + 1,  w_step - 1];
-        let mut res: Option<&Tile> = None;
-        for (id, tile) in self.tiles.iter().enumerate() {
-            let tile_pos = tile.position;
-            let dist = (pos - tile_pos).magnitude();
-            if dist < 60.0 {
-                let choices = nearby_idx.iter().cloned()
-                    .filter(|x|
-                            (((id as i32) + x) as usize) < self.tiles.len()
-                         && (id as i32) + x >= 0)
-                    .map(|x| (id as i32 + x) as usize).collect::<Vec<_>>();
-                println!("CHOICES: {:?} for tile {:?}", choices, tile);
-                res = Some(&self.tiles[*rand::thread_rng().choose(&choices).unwrap()]);
-                break;
-            }
-        }
-        res
-    }
-
     pub fn get_tiles(&self) -> Vec<&Tile> {
         self.tiles.iter().map(|ref tile_ref| *tile_ref).collect::<Vec<_>>()
     }
@@ -225,6 +214,19 @@ impl Tiles {
         }
     }
 
+    pub fn resource_at(&self, position: Vector2<f32>) -> Option<&Tile> {
+        let tile_ids = self.tree.find_all(&position);
+        if tile_ids.is_some() {
+            for tile_id in (*(tile_ids.unwrap())).iter() {
+                let tile = &self.tiles[*tile_id];
+                if tile.resource_count > 0 {
+                    return Some(tile);
+                }
+            }
+        }
+        None
+    }
+
     pub fn tile_at(&mut self, position: Vector2<f32>) -> Option<&Tile> {
         let tile_id = self.tree.find(&position);
         if tile_id.is_some() {
@@ -233,6 +235,27 @@ impl Tiles {
             Some(&self.tiles[i])
         } else {
             None
+        }
+    }
+
+    pub fn index_of(&self, tile: &Tile) -> Option<usize> {
+        self.tiles.iter().position(|ref r| r.resource_count > 0 && r.position.x == tile.position.x && r.position.y == tile.position.y)
+    }
+
+    pub fn remove(&mut self, tile_id: Option<usize>) -> Option<usize> {
+        if tile_id.is_some() {
+            let old_len = self.tiles.len();
+            let _tile_id = tile_id.unwrap();
+            self.tiles.remove(_tile_id);
+            self.tree.remove(_tile_id);
+        }
+        None
+    }
+
+    pub fn replace(&mut self, id: Option<usize>, tex_id: u32, can_be_carried: bool) {
+        if id.is_some() {
+            self.tiles[id.unwrap()].tex_id = tex_id;
+            self.tiles[id.unwrap()].can_be_carried = can_be_carried;
         }
     }
 }

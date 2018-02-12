@@ -126,6 +126,21 @@ impl QuadTree {
         None
     }
 
+    pub fn find_all(&self, pos: &Vector2<f32>) -> Option<&[usize]> {
+        if self.contains(pos) {
+            if self.branches.len() == 0 && self.tiles.len() > 0 {
+                return Some(&self.tiles[..]);
+            } else {
+                for branch in self.branches.iter() {
+                    if branch.contains(pos) {
+                        return branch.find_all(&pos);
+                    }
+                }
+            }
+        }
+        None
+    }
+
     pub fn find_around_in(&self, pos: &Vector2<f32>, subset: &HashSet<usize>) -> Option<usize> {
         let mut rng = rand::thread_rng();
         if self.contains(pos) {
@@ -152,5 +167,17 @@ impl QuadTree {
             }
         }
         None
+    }
+
+    pub fn remove(&mut self, id: usize) {
+        if self.branches.len() == 0 && self.tiles.len() > 0 {
+            let old_len = self.tiles.len();
+            self.tiles.retain(|&x| x != id);
+            self.tiles_set.remove(&id);
+        } else {
+            for branch in self.branches.iter_mut() {
+                branch.remove(id);
+            }
+        }
     }
 }

@@ -41,6 +41,8 @@ const SPRITE_STONE: u32 = 4;
 const SPRITE_TREE: u32 = 5;
 const SPRITE_WOOD: u32 = 6;
 
+const RESOURCE_WOOD: u8 = 0;
+
 gfx_defines!{
     vertex Vertex {
         position: [f32; 2] = "i_position",
@@ -218,7 +220,7 @@ impl<B: gfx::Backend> support::Application<B> for App<B> {
         {
             let mut writer = device.write_mapping(&text_upload).unwrap();
             fill_instances(&mut writer, 0, &vec![
-                &tiles::Tile { position: cgmath::Vector2::new(160.0, 221.0), tex_id: 4, is_selected: false }]);
+                &tiles::Tile::new(cgmath::Vector2::new(160.0, 221.0), 0, None)]);
         };
         self.data_ui.instance = device
             .create_buffer(1,
@@ -271,7 +273,7 @@ impl<B: gfx::Backend> support::Application<B> for App<B> {
             println!("Clicked at tile: {:?}", picked_tile_id);
         }
         self.selection.update(x, y, &new_buttons, &old_buttons, &buttons);
-        self.miners.update(tick as f32, &self.tiles);
+        self.miners.update(tick as f32, &mut self.tiles);
 
         if self.selection.pressed {
             self.tiles.update_selected(&self.selection);
